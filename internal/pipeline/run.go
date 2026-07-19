@@ -6,7 +6,8 @@ import "errors"
 // Sources: --image (trivy, needs 1.6 down-convert) and/or --go-mod (cyclonedx-gomod,
 // emits 1.6 natively). At least one is required. With both sources the two SBOMs
 // are merged (trivy primary) via sbomasm; a solo run passes the generator's output
-// straight through to validate — no merge tool is invoked.
+// straight through. The merged-or-solo SBOM is then enriched by parlay (unless
+// --skip-enrichment) before validate — no merge tool is invoked for a solo run.
 func Run(cfg Config) ([]byte, error) {
 	if cfg.Image == "" && cfg.GoMod == "" {
 		return nil, errors.New("at least one of --image or --go-mod is required")
@@ -42,6 +43,14 @@ func Run(cfg Config) ([]byte, error) {
 		sbom = image // solo image, pass through
 	default:
 		sbom = gomod // solo gomod, pass through
+	}
+
+	// enrich: parlay fills supplier/license/VCS for Go components from the
+	// registry. --skip-enrichment is the sole opt-out; otherwise fail-loud.
+	if !cfg.SkipEnrichment {
+		if sbom, err = enrich(sbom); err != nil {
+			return nil, err
+		}
 	}
 
 	if err := validate(sbom); err != nil {
