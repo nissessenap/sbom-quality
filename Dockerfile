@@ -36,16 +36,23 @@ FROM golang:${GO_VERSION}-alpine
 # git: cyclonedx-gomod reads the module version from git. ca-certificates: trivy
 # image pulls and parlay's ecosyste.ms calls need TLS roots.
 RUN apk add --no-cache git ca-certificates \
- && git config --system --add safe.directory '*'
-# safe.directory '*': the container runs as root but the user's --go-mod repo is a
-# bind-mount owned by their host uid; without this git refuses it as "dubious
-# ownership" and cyclonedx-gomod's VCS stamping fails.
+ && git config --system --add safe.directory '*' \
+ && adduser -D -u 65532 nonroot
+# safe.directory '*' (system-wide, so it applies to the nonroot user too): the
+# user's --go-mod repo is a bind-mount owned by their host uid, which never
+# matches the container uid; without this git refuses it as "dubious ownership"
+# and cyclonedx-gomod's VCS stamping fails.
 
 COPY --from=builder /go/bin/cyclonedx-gomod /go/bin/sbomasm /go/bin/parlay /go/bin/sbom-utility /usr/local/bin/
 COPY --from=builder /out/sbom-quality /usr/local/bin/sbom-quality
 COPY --from=trivy /usr/local/bin/trivy /usr/local/bin/trivy
 
-# ponytail: runs as root (base-image default). Fine for an ephemeral --rm CLI;
-# going non-root needs a writable GOCACHE/GOMODCACHE (cyclonedx-gomod runs `go
-# build` at runtime) and does NOT remove the safe.directory need above.
+# Run non-root. cyclonedx-gomod shells out to `go build` at runtime, so point the
+# go caches at the nonroot HOME (go creates them on first use); /go stays read-only.
+ENV HOME=/home/nonroot \
+    GOCACHE=/home/nonroot/.cache/go-build \
+    GOMODCACHE=/home/nonroot/go/pkg/mod
+USER nonroot
+WORKDIR /home/nonroot
+
 ENTRYPOINT ["sbom-quality"]
