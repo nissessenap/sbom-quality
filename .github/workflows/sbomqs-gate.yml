@@ -16,8 +16,10 @@ jobs:
     runs-on: ubuntu-latest
     env:
       CYCLONEDX_GOMOD_VERSION: v1.10.0
+      SBOMASM_VERSION: v2.0.9
       SBOM_UTILITY_VERSION: v0.19.2
       SBOMQS_VERSION: v2.0.8
+      TRIVY_VERSION: v0.58.0
     steps:
       - uses: actions/checkout@v4
 
@@ -28,9 +30,14 @@ jobs:
       - name: Install SBOM tools
         run: |
           go install "github.com/CycloneDX/cyclonedx-gomod/cmd/cyclonedx-gomod@${CYCLONEDX_GOMOD_VERSION}"
+          go install "github.com/interlynk-io/sbomasm/v2@${SBOMASM_VERSION}"
           go install "github.com/CycloneDX/sbom-utility@${SBOM_UTILITY_VERSION}"
           go install "github.com/interlynk-io/sbomqs/v2@${SBOMQS_VERSION}"
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - uses: aquasecurity/setup-trivy@v0.2.3
+        with:
+          version: ${{ env.TRIVY_VERSION }}
 
       - name: sbomqs gate
         run: ./scripts/sbomqs-gate.sh

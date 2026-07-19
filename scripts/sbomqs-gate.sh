@@ -1,11 +1,19 @@
 #!/usr/bin/env bash
-# Generate an SBOM from testdata/fixture-module with the built binary, score it
-# with sbomqs, and fail if the score regresses below FLOOR. Ratchet FLOOR up as
-# score-lifting stages (enrich/augment/quality-patch) land. Requires cyclonedx-gomod,
-# sbom-utility and sbomqs on PATH.
+# Build the binary and score its SBOMs with sbomqs, failing if any score
+# regresses below its floor. Ratchet the floors up as score-lifting stages
+# (enrich/augment/quality-patch) land.
+#
+# Two gates:
+#   gomod-solo  --go-mod only (pass-through)          FLOOR
+#   merged      --image + --go-mod (sbomasm merge)    MERGED_FLOOR
+#
+# Requires cyclonedx-gomod, sbomasm, trivy, sbom-utility and sbomqs on PATH.
+# The merged gate pulls IMAGE (a small public image); trivy runs image-pull only.
 set -euo pipefail
 
 FLOOR="${FLOOR:-6.0}"
+MERGED_FLOOR="${MERGED_FLOOR:-5.0}"
+IMAGE="${IMAGE:-alpine:3.20}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
@@ -19,15 +27,23 @@ git -C "$WORK" -c user.email=ci@example.com -c user.name=ci commit -qm fixture
 git -C "$WORK" tag v0.1.0
 
 go build -C "$REPO_ROOT" -o "$WORK/sbom-quality" ./cmd/sbom-quality
-"$WORK/sbom-quality" --go-mod "$WORK" --supplier-name "sbom-quality CI" -o "$WORK/out.cdx.json"
 
-echo "=== sbomqs score ==="
-sbomqs score "$WORK/out.cdx.json"
+# gate NAME FLOOR FILE — print the score report and fail if it drops below FLOOR.
+gate() {
+	local name="$1" floor="$2" file="$3" score
+	echo "=== $name sbomqs score ==="
+	sbomqs score "$file"
+	score="$(sbomqs score "$file" --basic | cut -f1)"
+	echo "$name score=$score floor=$floor"
+	if awk -v s="$score" -v f="$floor" 'BEGIN { exit !(s + 0 < f + 0) }'; then
+		echo "::error::$name sbomqs score $score is below floor $floor — SBOM quality regressed"
+		exit 1
+	fi
+	echo "OK: $name score $score meets floor $floor"
+}
 
-SCORE="$(sbomqs score "$WORK/out.cdx.json" --basic | cut -f1)"
-echo "score=$SCORE floor=$FLOOR"
-if awk -v s="$SCORE" -v f="$FLOOR" 'BEGIN { exit !(s + 0 < f + 0) }'; then
-	echo "::error::sbomqs score $SCORE is below floor $FLOOR — SBOM quality regressed"
-	exit 1
-fi
-echo "OK: sbomqs score $SCORE meets floor $FLOOR"
+"$WORK/sbom-quality" --go-mod "$WORK" --supplier-name "sbom-quality CI" -o "$WORK/gomod.cdx.json"
+gate gomod-solo "$FLOOR" "$WORK/gomod.cdx.json"
+
+"$WORK/sbom-quality" --image "$IMAGE" --go-mod "$WORK" --supplier-name "sbom-quality CI" -o "$WORK/merged.cdx.json"
+gate merged "$MERGED_FLOOR" "$WORK/merged.cdx.json"
