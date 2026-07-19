@@ -3,6 +3,7 @@ package pipeline
 import (
 	"bytes"
 	"fmt"
+	"os"
 	"os/exec"
 )
 
@@ -36,4 +37,23 @@ func runTool(bin string, args ...string) ([]byte, error) {
 		return nil, fmt.Errorf("%s %v failed: %w\n%s", bin, args, err, stderr.String())
 	}
 	return stdout.Bytes(), nil
+}
+
+// writeTempSBOM writes an SBOM to a temp file and returns its path; the caller
+// removes it. Files-as-truth is how exec stages hand documents to external tools.
+func writeTempSBOM(sbom []byte) (string, error) {
+	f, err := os.CreateTemp("", "sbom-quality-*.cdx.json")
+	if err != nil {
+		return "", fmt.Errorf("create temp file: %w", err)
+	}
+	if _, err := f.Write(sbom); err != nil {
+		f.Close()
+		os.Remove(f.Name())
+		return "", fmt.Errorf("write temp file: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(f.Name())
+		return "", fmt.Errorf("close temp file: %w", err)
+	}
+	return f.Name(), nil
 }
