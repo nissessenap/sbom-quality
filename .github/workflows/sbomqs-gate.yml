@@ -4,8 +4,6 @@ name: sbomqs gate
 # the floor in scripts/sbomqs-gate.sh. Ratchet the floor up as score-lifting
 # stages land.
 on:
-  push:
-    branches: [main]
   pull_request:
 
 permissions:
