@@ -53,6 +53,16 @@ func Run(cfg Config) ([]byte, error) {
 		}
 	}
 
+	// augment: fill document-identity metadata. VCS autodetect runs here (not via
+	// kong env: tags) so flag > autodetect > generator precedence holds.
+	var vcs vcsInfo
+	if !cfg.NoCIAutodetect {
+		vcs = detectGitHubVCS()
+	}
+	if sbom, err = augment(sbom, cfg, vcs); err != nil {
+		return nil, err
+	}
+
 	if err := validate(sbom); err != nil {
 		return nil, err
 	}

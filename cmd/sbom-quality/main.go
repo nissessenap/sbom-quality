@@ -12,11 +12,18 @@ import (
 )
 
 type cli struct {
-	Image          string `help:"Remote image ref (repo:tag or repo@sha256). At least one of --image/--go-mod is required."`
-	GoMod          string `name:"go-mod" help:"Go module path (directory). At least one of --image/--go-mod is required."`
-	SupplierName   string `help:"Supplier name for document provenance." required:""`
-	SkipEnrichment bool   `name:"skip-enrichment" help:"Skip the parlay enrich stage (supplier/license/VCS for Go components)."`
-	Output         string `name:"output" short:"o" help:"Write SBOM to a file instead of stdout."`
+	Image           string   `help:"Remote image ref (repo:tag or repo@sha256). At least one of --image/--go-mod is required."`
+	GoMod           string   `name:"go-mod" help:"Go module path (directory). At least one of --image/--go-mod is required."`
+	SupplierName    string   `help:"Supplier name for document provenance." required:""`
+	SupplierURL     string   `name:"supplier-url" help:"Supplier URL for document provenance."`
+	SupplierContact string   `name:"supplier-contact" help:"Supplier contact (email or name) for document provenance."`
+	Author          []string `help:"Document author (repeatable)."`
+	Manufacturer    string   `help:"Manufacturer name for document-identity metadata."`
+	License         string   `help:"Primary-component license (SPDX id or expression)."`
+	Lifecycle       string   `help:"Lifecycle phase (e.g. build, post-build)."`
+	NoCIAutodetect  bool     `name:"no-ci-autodetect" help:"Disable GitHub CI-env VCS autodetect (url/commit/ref)."`
+	SkipEnrichment  bool     `name:"skip-enrichment" help:"Skip the parlay enrich stage (supplier/license/VCS for Go components)."`
+	Output          string   `name:"output" short:"o" help:"Write SBOM to a file instead of stdout."`
 }
 
 func main() {
@@ -26,12 +33,22 @@ func main() {
 		kong.Description("Orchestrate tools into a high-quality CycloneDX 1.6 SBOM."),
 	)
 
-	sbom, err := pipeline.Run(pipeline.Config{
-		Image:          c.Image,
-		GoMod:          c.GoMod,
-		SupplierName:   c.SupplierName,
-		SkipEnrichment: c.SkipEnrichment,
-	})
+	cfg := pipeline.Config{
+		Image:           c.Image,
+		GoMod:           c.GoMod,
+		SupplierName:    c.SupplierName,
+		SupplierURL:     c.SupplierURL,
+		SupplierContact: c.SupplierContact,
+		Authors:         c.Author,
+		Manufacturer:    c.Manufacturer,
+		License:         c.License,
+		Lifecycle:       c.Lifecycle,
+		NoCIAutodetect:  c.NoCIAutodetect,
+		SkipEnrichment:  c.SkipEnrichment,
+	}
+	pipeline.WarnMissingConfig(os.Stderr, cfg)
+
+	sbom, err := pipeline.Run(cfg)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "sbom-quality: %v\n", err)
 		os.Exit(1)

@@ -11,8 +11,8 @@
 # The merged gate pulls IMAGE (a small public image); trivy runs image-pull only.
 set -euo pipefail
 
-FLOOR="${FLOOR:-6.2}"
-MERGED_FLOOR="${MERGED_FLOOR:-5.3}"
+FLOOR="${FLOOR:-6.4}"
+MERGED_FLOOR="${MERGED_FLOOR:-5.5}"
 IMAGE="${IMAGE:-alpine:3.20}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WORK="$(mktemp -d)"
