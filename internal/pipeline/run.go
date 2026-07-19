@@ -63,6 +63,13 @@ func Run(cfg Config) ([]byte, error) {
 		return nil, err
 	}
 
+	// quality-patch: native score-tuning (license shape, compositions, wrapper
+	// supplier/license back-fill). Runs after augment so the doc supplier and
+	// primary-component license it back-fills are already set.
+	if sbom, err = qualityPatch(sbom); err != nil {
+		return nil, err
+	}
+
 	if err := validate(sbom); err != nil {
 		return nil, err
 	}
