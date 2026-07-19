@@ -12,7 +12,8 @@ import (
 )
 
 type cli struct {
-	Image        string `help:"Remote image ref (repo:tag or repo@sha256)." required:""`
+	Image        string `help:"Remote image ref (repo:tag or repo@sha256). At least one of --image/--go-mod is required."`
+	GoMod        string `name:"go-mod" help:"Go module path (directory). At least one of --image/--go-mod is required."`
 	SupplierName string `help:"Supplier name for document provenance." required:""`
 	Output       string `name:"output" short:"o" help:"Write SBOM to a file instead of stdout."`
 }
@@ -26,6 +27,7 @@ func main() {
 
 	sbom, err := pipeline.Run(pipeline.Config{
 		Image:        c.Image,
+		GoMod:        c.GoMod,
 		SupplierName: c.SupplierName,
 	})
 	if err != nil {
