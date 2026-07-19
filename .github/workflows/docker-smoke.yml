@@ -29,6 +29,10 @@ jobs:
       - name: Run pipeline in container
         run: |
           work="$(mktemp -d)"
+          # mktemp -d is 0700; the image's fixed nonroot uid (65532) can't
+          # traverse a dir owned by the host uid, so go list's cwd chdir fails.
+          # Real repos are 0755 — mirror that so the mount is traversable.
+          chmod 0755 "$work"
           cp testdata/fixture-module/{go.mod,go.sum,main.go} "$work/"
           git -C "$work" init -q
           git -C "$work" add -A
