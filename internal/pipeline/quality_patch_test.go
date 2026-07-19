@@ -97,6 +97,27 @@ func TestPatchWrapperLicenseBackfill(t *testing.T) {
 	}
 }
 
+// back-filled supplier/license must be bom-ref-free copies, else reusing a source
+// bom-ref across components would fail sbom-utility validate (CDX bom-ref uniqueness).
+func TestPatchBackfillClearsBOMRefs(t *testing.T) {
+	bom := patchBOM()
+	bom.Metadata.Supplier.BOMRef = "supplier-ref"
+	(*bom.Metadata.Component.Licenses)[0].License.BOMRef = "license-ref"
+	(*bom.Components)[0].Licenses = nil // force license back-fill
+	applyQualityPatch(bom)
+
+	wrapper := (*bom.Components)[0]
+	if wrapper.Supplier.BOMRef != "" {
+		t.Errorf("back-filled supplier bom-ref = %q, want cleared", wrapper.Supplier.BOMRef)
+	}
+	if wrapper.Supplier == bom.Metadata.Supplier {
+		t.Error("back-filled supplier is the shared source pointer, want an independent copy")
+	}
+	if lic := (*wrapper.Licenses)[0].License; lic.BOMRef != "" {
+		t.Errorf("back-filled license bom-ref = %q, want cleared", lic.BOMRef)
+	}
+}
+
 // qualityPatch round-trips through 1.6 JSON: decode, apply, re-encode.
 func TestQualityPatchRoundTripEncodes16(t *testing.T) {
 	in := []byte(`{"bomFormat":"CycloneDX","specVersion":"1.6","version":1,` +

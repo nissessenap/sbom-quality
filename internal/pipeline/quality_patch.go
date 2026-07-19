@@ -78,15 +78,16 @@ func applyQualityPatch(bom *cdx.BOM) {
 	md := bom.Metadata
 
 	// doc supplier / primary license are the only faithful sources for the back-fills.
-	// Both were populated by augment without bom-refs, so sharing them across components
-	// can't violate CDX bom-ref uniqueness. ponytail: shared pointers, safe as long as
-	// nothing mutates them after this point.
+	// Each recipient gets its own copy with bom-refs cleared: sharing one supplier/
+	// license object across N components would duplicate any bom-ref it carries and
+	// fail sbom-utility validate (CDX 1.6 requires bom-ref uniqueness) — the guard
+	// enrich-document.jq did with strip_bom_refs.
 	docSupplier := md.Supplier
 	docLicenses := md.Component.Licenses
 
 	// 3. primary-component supplier back-fill (absent only).
 	if md.Component.Supplier == nil {
-		md.Component.Supplier = docSupplier
+		md.Component.Supplier = supplierCopy(docSupplier)
 	}
 
 	// 3+4. wrapper components in .components[]: back-fill supplier and license when absent.
@@ -97,13 +98,40 @@ func applyQualityPatch(bom *cdx.BOM) {
 				continue
 			}
 			if c.Supplier == nil {
-				c.Supplier = docSupplier
+				c.Supplier = supplierCopy(docSupplier)
 			}
 			if (c.Licenses == nil || len(*c.Licenses) == 0) && docLicenses != nil && len(*docLicenses) > 0 {
-				c.Licenses = docLicenses
+				c.Licenses = licensesCopy(docLicenses)
 			}
 		}
 	}
+}
+
+// supplierCopy returns a bom-ref-free shallow copy of e (nil-safe), so back-filling it
+// onto a component can't duplicate a bom-ref the source carried.
+func supplierCopy(e *cdx.OrganizationalEntity) *cdx.OrganizationalEntity {
+	if e == nil {
+		return nil
+	}
+	c := *e
+	c.BOMRef = ""
+	return &c
+}
+
+// licensesCopy returns a bom-ref-free deep copy of the license list, for the same
+// bom-ref-uniqueness reason as supplierCopy.
+func licensesCopy(l *cdx.Licenses) *cdx.Licenses {
+	out := make(cdx.Licenses, len(*l))
+	for i, lc := range *l {
+		lc.BOMRef = ""
+		if lc.License != nil {
+			lic := *lc.License
+			lic.BOMRef = ""
+			lc.License = &lic
+		}
+		out[i] = lc
+	}
+	return &out
 }
 
 // normalizeComponentLicenses applies patch 1 to a component and its nested components:
@@ -133,7 +161,6 @@ func normalizeLicenses(lics *cdx.Licenses) {
 		case lc.License != nil:
 			if lc.License.Acknowledgement == "" {
 				lc.License.Acknowledgement = cdx.LicenseAcknowledgementDeclared
-				(*lics)[i] = lc
 			}
 		}
 	}
