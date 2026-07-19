@@ -45,4 +45,7 @@ COPY --from=builder /go/bin/cyclonedx-gomod /go/bin/sbomasm /go/bin/parlay /go/b
 COPY --from=builder /out/sbom-quality /usr/local/bin/sbom-quality
 COPY --from=trivy /usr/local/bin/trivy /usr/local/bin/trivy
 
+# ponytail: runs as root (base-image default). Fine for an ephemeral --rm CLI;
+# going non-root needs a writable GOCACHE/GOMODCACHE (cyclonedx-gomod runs `go
+# build` at runtime) and does NOT remove the safe.directory need above.
 ENTRYPOINT ["sbom-quality"]
