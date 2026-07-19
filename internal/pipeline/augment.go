@@ -1,8 +1,6 @@
 package pipeline
 
 import (
-	"bytes"
-	"fmt"
 	"os"
 	"strings"
 
@@ -21,19 +19,7 @@ type vcsInfo struct {
 // the generator emitted and an unset one leaves it untouched. Decode → apply → encode
 // at 1.6.
 func augment(sbom []byte, cfg Config, vcs vcsInfo) ([]byte, error) {
-	var bom cdx.BOM
-	if err := cdx.NewBOMDecoder(bytes.NewReader(sbom), cdx.BOMFileFormatJSON).Decode(&bom); err != nil {
-		return nil, fmt.Errorf("decode SBOM for augment: %w", err)
-	}
-
-	applyAugment(&bom, cfg, vcs)
-
-	var out bytes.Buffer
-	enc := cdx.NewBOMEncoder(&out, cdx.BOMFileFormatJSON).SetPretty(true)
-	if err := enc.EncodeVersion(&bom, cdx.SpecVersion1_6); err != nil {
-		return nil, fmt.Errorf("encode augmented SBOM at 1.6: %w", err)
-	}
-	return out.Bytes(), nil
+	return reencode16(sbom, func(bom *cdx.BOM) { applyAugment(bom, cfg, vcs) })
 }
 
 // applyAugment is the pure BOM→BOM transform behind augment (unit-tested directly on
@@ -131,7 +117,7 @@ func setVCSRef(c *cdx.Component, url string) {
 			}
 		}
 	}
-	refs := []cdx.ExternalReference{}
+	var refs []cdx.ExternalReference
 	if c.ExternalReferences != nil {
 		refs = *c.ExternalReferences
 	}
@@ -149,7 +135,7 @@ func setProperty(c *cdx.Component, name, value string) {
 			}
 		}
 	}
-	props := []cdx.Property{}
+	var props []cdx.Property
 	if c.Properties != nil {
 		props = *c.Properties
 	}

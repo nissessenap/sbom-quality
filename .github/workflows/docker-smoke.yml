@@ -1,0 +1,45 @@
+name: docker smoke
+
+# Prove the container builds and runs the identical code path before a release
+# tag ever touches it — the sbomqs gate tests the host binary, this tests the
+# image (base, tool PATH, runtime go toolchain, git ownership). Not the score
+# authority: it just asserts the bundled tools produce a valid 1.6 SBOM.
+#
+# Only runs when packaging changes — source-only PRs are covered by the host gate.
+on:
+  pull_request:
+    paths:
+      - Dockerfile
+      - go.mod
+      - go.sum
+      - .github/workflows/docker-smoke.yml
+
+permissions:
+  contents: read
+
+jobs:
+  docker-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build image
+        run: docker build -t sbom-quality:ci .
+
+      - name: Run pipeline in container
+        run: |
+          work="$(mktemp -d)"
+          # mktemp -d is 0700; the image's fixed nonroot uid (65532) can't
+          # traverse a dir owned by the host uid, so go list's cwd chdir fails.
+          # Real repos are 0755 — mirror that so the mount is traversable.
+          chmod 0755 "$work"
+          cp testdata/fixture-module/{go.mod,go.sum,main.go} "$work/"
+          git -C "$work" init -q
+          git -C "$work" add -A
+          git -C "$work" -c user.email=ci@example.com -c user.name=ci commit -qm fixture
+          git -C "$work" tag v0.1.0
+          # The in-pipeline sbom-utility validate means exit 0 == valid SBOM.
+          docker run --rm -v "$work":/work sbom-quality:ci \
+            --go-mod /work --supplier-name "sbom-quality CI" > "$work/out.cdx.json"
+          grep -q '"specVersion": *"1.6"' "$work/out.cdx.json"
+          echo "OK: container produced a valid 1.6 SBOM"

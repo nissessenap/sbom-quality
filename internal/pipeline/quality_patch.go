@@ -1,8 +1,6 @@
 package pipeline
 
 import (
-	"bytes"
-	"fmt"
 	"strings"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
@@ -23,19 +21,7 @@ var wrapperTypes = map[cdx.ComponentType]bool{
 // then re-encodes at 1.6. Ported from enrich-document.jq; correctness is verified by
 // the sbomqs golden gate, not up-front rules.
 func qualityPatch(sbom []byte) ([]byte, error) {
-	var bom cdx.BOM
-	if err := cdx.NewBOMDecoder(bytes.NewReader(sbom), cdx.BOMFileFormatJSON).Decode(&bom); err != nil {
-		return nil, fmt.Errorf("decode SBOM for quality-patch: %w", err)
-	}
-
-	applyQualityPatch(&bom)
-
-	var out bytes.Buffer
-	enc := cdx.NewBOMEncoder(&out, cdx.BOMFileFormatJSON).SetPretty(true)
-	if err := enc.EncodeVersion(&bom, cdx.SpecVersion1_6); err != nil {
-		return nil, fmt.Errorf("encode quality-patched SBOM at 1.6: %w", err)
-	}
-	return out.Bytes(), nil
+	return reencode16(sbom, applyQualityPatch)
 }
 
 // applyQualityPatch is the pure BOM→BOM transform behind qualityPatch (unit-tested
