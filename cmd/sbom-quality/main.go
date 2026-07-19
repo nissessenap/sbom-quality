@@ -12,10 +12,11 @@ import (
 )
 
 type cli struct {
-	Image        string `help:"Remote image ref (repo:tag or repo@sha256). At least one of --image/--go-mod is required."`
-	GoMod        string `name:"go-mod" help:"Go module path (directory). At least one of --image/--go-mod is required."`
-	SupplierName string `help:"Supplier name for document provenance." required:""`
-	Output       string `name:"output" short:"o" help:"Write SBOM to a file instead of stdout."`
+	Image          string `help:"Remote image ref (repo:tag or repo@sha256). At least one of --image/--go-mod is required."`
+	GoMod          string `name:"go-mod" help:"Go module path (directory). At least one of --image/--go-mod is required."`
+	SupplierName   string `help:"Supplier name for document provenance." required:""`
+	SkipEnrichment bool   `name:"skip-enrichment" help:"Skip the parlay enrich stage (supplier/license/VCS for Go components)."`
+	Output         string `name:"output" short:"o" help:"Write SBOM to a file instead of stdout."`
 }
 
 func main() {
@@ -26,9 +27,10 @@ func main() {
 	)
 
 	sbom, err := pipeline.Run(pipeline.Config{
-		Image:        c.Image,
-		GoMod:        c.GoMod,
-		SupplierName: c.SupplierName,
+		Image:          c.Image,
+		GoMod:          c.GoMod,
+		SupplierName:   c.SupplierName,
+		SkipEnrichment: c.SkipEnrichment,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "sbom-quality: %v\n", err)
