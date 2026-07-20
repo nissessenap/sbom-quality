@@ -17,7 +17,7 @@ var wrapperTypes = map[cdx.ComponentType]bool{
 	cdx.ComponentTypePlatform:    true,
 }
 
-// qualityPatch applies the four native score-tuning patches (see applyQualityPatch)
+// qualityPatch applies the five native score-tuning patches (see applyQualityPatch)
 // then re-encodes at 1.6. Ported from enrich-document.jq; correctness is verified by
 // the sbomqs golden gate, not up-front rules.
 func qualityPatch(sbom []byte) ([]byte, error) {
@@ -25,15 +25,16 @@ func qualityPatch(sbom []byte) ([]byte, error) {
 }
 
 // applyQualityPatch is the pure BOM→BOM transform behind qualityPatch (unit-tested
-// directly). Four patches, all score-tuning only:
+// directly). Five patches, all score-tuning only:
 //  1. every license gets acknowledgement:declared; SPDX expressions are unwrapped to
 //     license.name (CDX 1.6 rejects non-enum ids inside expressions, name is free-form).
 //  2. compositions declared complete.
-//  3. our own supplier (metadata.supplier) back-filled onto wrapper components lacking one.
-//  4. the primary-component license back-filled onto wrapper components lacking one.
+//  3. primary-component SHA-256 checksum lifted from its oci purl when hashes are absent.
+//  4. our own supplier (metadata.supplier) back-filled onto wrapper components lacking one.
+//  5. the primary-component license back-filled onto wrapper components lacking one.
 //
-// Patches 3–4 assert only *our own* provenance (the doc supplier / primary license), never
-// third-party suppliers we can't verify.
+// Patches 3–5 assert only *our own* provenance (the primary digest / doc supplier / primary
+// license), never third-party data we can't verify.
 func applyQualityPatch(bom *cdx.BOM) {
 	// 1. license normalization — walk the primary component and every component.
 	if bom.Metadata != nil && bom.Metadata.Component != nil {
@@ -63,6 +64,15 @@ func applyQualityPatch(bom *cdx.BOM) {
 	}
 	md := bom.Metadata
 
+	// primary-component strong checksum — the image digest is already in the oci
+	// purl (pkg:oci/<name>@sha256:<hex>); surface it as a SHA-256 hash when absent.
+	// Faithful: it's the same digest, not a recomputation.
+	if md.Component.Hashes == nil || len(*md.Component.Hashes) == 0 {
+		if hex := sha256FromPurl(md.Component.PackageURL); hex != "" {
+			md.Component.Hashes = &[]cdx.Hash{{Algorithm: cdx.HashAlgoSHA256, Value: hex}}
+		}
+	}
+
 	// doc supplier / primary license are the only faithful sources for the back-fills.
 	// Each recipient gets its own copy with bom-refs cleared: sharing one supplier/
 	// license object across N components would duplicate any bom-ref it carries and
@@ -71,12 +81,12 @@ func applyQualityPatch(bom *cdx.BOM) {
 	docSupplier := md.Supplier
 	docLicenses := md.Component.Licenses
 
-	// 3. primary-component supplier back-fill (absent only).
+	// 4. primary-component supplier back-fill (absent only).
 	if md.Component.Supplier == nil {
 		md.Component.Supplier = supplierCopy(docSupplier)
 	}
 
-	// 3+4. wrapper components in .components[]: back-fill supplier and license when absent.
+	// 4+5. wrapper components in .components[]: back-fill supplier and license when absent.
 	if bom.Components != nil {
 		for i := range *bom.Components {
 			c := &(*bom.Components)[i]
@@ -150,6 +160,27 @@ func normalizeLicenses(lics *cdx.Licenses) {
 			}
 		}
 	}
+}
+
+// sha256FromPurl extracts the 64-hex-char digest from an oci purl's "@sha256:<hex>"
+// suffix (stopping at any ?/# qualifier), or "" if absent or malformed.
+func sha256FromPurl(purl string) string {
+	_, hex, ok := strings.Cut(purl, "@sha256:")
+	if !ok {
+		return ""
+	}
+	if i := strings.IndexAny(hex, "?#"); i >= 0 {
+		hex = hex[:i]
+	}
+	if len(hex) != 64 {
+		return ""
+	}
+	for _, r := range hex {
+		if !('0' <= r && r <= '9' || 'a' <= r && r <= 'f') {
+			return ""
+		}
+	}
+	return hex
 }
 
 // unwrapExpression strips one layer of wrapping parens, matching what cyclonedx-gomod

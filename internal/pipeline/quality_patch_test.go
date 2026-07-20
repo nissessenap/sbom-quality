@@ -118,6 +118,45 @@ func TestPatchBackfillClearsBOMRefs(t *testing.T) {
 	}
 }
 
+func TestPatchPrimaryChecksumFromPurl(t *testing.T) {
+	const hex = "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+	bom := patchBOM()
+	bom.Metadata.Component.PackageURL = "pkg:oci/alpine@sha256:" + hex + "?arch=amd64"
+	applyQualityPatch(bom)
+
+	h := bom.Metadata.Component.Hashes
+	if h == nil || len(*h) != 1 || (*h)[0].Algorithm != cdx.HashAlgoSHA256 || (*h)[0].Value != hex {
+		t.Errorf("primary hashes = %+v, want single SHA-256 %s from purl", h, hex)
+	}
+
+	// existing hashes are left untouched; a purl without a digest adds nothing.
+	bom = patchBOM()
+	bom.Metadata.Component.PackageURL = "pkg:golang/example.com/app@v1.0.0"
+	applyQualityPatch(bom)
+	if bom.Metadata.Component.Hashes != nil {
+		t.Errorf("hashes = %+v, want none for a digest-less purl", bom.Metadata.Component.Hashes)
+	}
+}
+
+func TestSHA256FromPurl(t *testing.T) {
+	const hex = "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+	if got := sha256FromPurl("pkg:oci/x@sha256:" + hex); got != hex {
+		t.Errorf("got %q, want %q", got, hex)
+	}
+	if got := sha256FromPurl("pkg:oci/x@sha256:" + hex + "?arch=amd64"); got != hex {
+		t.Errorf("qualifier not stripped: %q", got)
+	}
+	if got := sha256FromPurl("pkg:golang/x@v1.0.0"); got != "" {
+		t.Errorf("no digest → %q, want empty", got)
+	}
+	if got := sha256FromPurl("pkg:oci/x@sha256:short"); got != "" {
+		t.Errorf("malformed digest → %q, want empty", got)
+	}
+	if got := sha256FromPurl("pkg:oci/x@sha256:" + hex[:63] + "Z"); got != "" {
+		t.Errorf("non-hex digest → %q, want empty", got)
+	}
+}
+
 // qualityPatch round-trips through 1.6 JSON: decode, apply, re-encode.
 func TestQualityPatchRoundTripEncodes16(t *testing.T) {
 	in := []byte(`{"bomFormat":"CycloneDX","specVersion":"1.6","version":1,` +

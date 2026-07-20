@@ -45,7 +45,8 @@ type Config struct {
 	Authors         []string // metadata.authors
 	Manufacturer    string   // metadata.manufacturer.name
 	License         string   // primary-component license (SPDX id/expression)
-	Lifecycle       string   // metadata.lifecycles phase
+	Lifecycle       string   // metadata.lifecycles phase (defaults to "build")
+	DataLicense     string   // metadata.licenses — the SBOM document's own data license (defaults to "CC0-1.0")
 
 	NoCIAutodetect bool // disable GitHub CI-env VCS autodetect
 	SkipEnrichment bool // opt out of the parlay enrich stage

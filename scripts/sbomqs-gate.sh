@@ -15,9 +15,9 @@
 # The image/merged gates pull IMAGE (a small public image); trivy runs image-pull only.
 set -euo pipefail
 
-FLOOR="${FLOOR:-7.1}"
-IMAGE_FLOOR="${IMAGE_FLOOR:-6.0}"
-MERGED_FLOOR="${MERGED_FLOOR:-6.1}"
+FLOOR="${FLOOR:-7.7}"
+IMAGE_FLOOR="${IMAGE_FLOOR:-6.6}"
+MERGED_FLOOR="${MERGED_FLOOR:-6.8}"
 IMAGE="${IMAGE:-alpine:3.20}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WORK="$(mktemp -d)"
@@ -53,11 +53,11 @@ gate() {
 	echo "OK: $name score $score meets floor $floor"
 }
 
-"$WORK/sbom-quality" --go-mod "$WORK" --supplier-name "sbom-quality CI" -o "$WORK/gomod.cdx.json"
+"$WORK/sbom-quality" --go-mod "$WORK" --supplier-name "sbom-quality CI" --author "sbom-quality CI" -o "$WORK/gomod.cdx.json"
 gate gomod-solo "$FLOOR" "$WORK/gomod.cdx.json"
 
-"$WORK/sbom-quality" --image "$IMAGE" --supplier-name "sbom-quality CI" -o "$WORK/image.cdx.json"
+"$WORK/sbom-quality" --image "$IMAGE" --supplier-name "sbom-quality CI" --author "sbom-quality CI" -o "$WORK/image.cdx.json"
 gate image-solo "$IMAGE_FLOOR" "$WORK/image.cdx.json"
 
-"$WORK/sbom-quality" --image "$IMAGE" --go-mod "$WORK" --supplier-name "sbom-quality CI" -o "$WORK/merged.cdx.json"
+"$WORK/sbom-quality" --image "$IMAGE" --go-mod "$WORK" --supplier-name "sbom-quality CI" --author "sbom-quality CI" -o "$WORK/merged.cdx.json"
 gate merged "$MERGED_FLOOR" "$WORK/merged.cdx.json"

@@ -7,6 +7,19 @@ not reimplement SBOM generation — it wires good tools through a fixed linear p
 
 The locked MVP spec lives in **GitHub issue #15** — read it before non-trivial work.
 
+## Pipeline stages
+
+| Stage | Tool / native | Does |
+|-------|---------------|------|
+| generate | trivy / cyclonedx-gomod | image & Go-module component inventory |
+| merge | sbomasm | one 1.6 doc from `--image` + `--go-mod` |
+| enrich | parlay | supplier / license / VCS for Go components |
+| augment | **native** | document-identity metadata: supplier, authors, lifecycle, data-license |
+| quality-patch | **native** | score-tuning: declared acknowledgements, compositions, supplier/license back-fill, primary SHA-256 |
+| validate | sbom-utility | fail-loud CycloneDX 1.6 conformance |
+
+Native stages assert only faithful *declared* data — never `acknowledgement:concluded` (see #15, #30). Per-flag docs live in `--help`; score floors live in `./scripts/sbomqs-gate.sh`.
+
 ## Layout
 
 - `cmd/sbom-quality` — flat kong CLI, no subcommands.

@@ -66,6 +66,12 @@ func applyAugment(bom *cdx.BOM, cfg Config, vcs vcsInfo) {
 		md.Lifecycles = &[]cdx.Lifecycle{{Phase: cdx.LifecyclePhase(cfg.Lifecycle)}}
 	}
 
+	// document data license — metadata.licenses is the SBOM document's own
+	// license (not any component's). CC0-1.0 by SPDX/CycloneDX convention.
+	if cfg.DataLicense != "" {
+		md.Licenses = &cdx.Licenses{licenseFrom(cfg.DataLicense)}
+	}
+
 	// primary-component license — a bare SPDX id lands in license.id (what
 	// sbomqs credits), a multi-license expression in the top-level expression
 	// slot. quality-patch (#21) later normalizes acknowledgement/unwraps.
