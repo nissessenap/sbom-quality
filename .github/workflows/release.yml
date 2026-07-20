@@ -63,17 +63,13 @@ jobs:
           push-to-registry: true
 
       # 2. SBOM: what's in the image. Run the just-shipped image against itself
-      #    (trivy pulls the same digest with the workflow token) — the bundled
-      #    tools produce a validated 1.6 SBOM on stdout, logs go to stderr.
+      #    (trivy pulls the same digest anonymously — the package is public) —
+      #    the bundled tools produce a validated 1.6 SBOM on stdout, logs go to
+      #    stderr.
       - name: Generate SBOM for the release image
-        env:
-          TRIVY_USERNAME: ${{ github.actor }}
-          TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
         run: |
           ref="${{ steps.img.outputs.name }}@${{ steps.build.outputs.digest }}"
-          docker run --rm \
-            -e TRIVY_USERNAME -e TRIVY_PASSWORD \
-            "$ref" --image "$ref" --supplier-name "sbom-quality" \
+          docker run --rm "$ref" --image "$ref" --supplier-name "sbom-quality" \
             > sbom.cdx.json
 
       - uses: actions/attest-sbom@v4
