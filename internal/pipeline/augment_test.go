@@ -113,6 +113,16 @@ func TestAugmentSetsOptionalFields(t *testing.T) {
 	}
 }
 
+func TestAugmentSetsDataLicense(t *testing.T) {
+	bom := baseBOM()
+	applyAugment(bom, Config{DataLicense: "CC0-1.0"}, vcsInfo{})
+
+	l := bom.Metadata.Licenses
+	if l == nil || len(*l) != 1 || (*l)[0].License == nil || (*l)[0].License.ID != "CC0-1.0" {
+		t.Errorf("metadata.licenses = %+v, want single license.id CC0-1.0", l)
+	}
+}
+
 func TestLicenseFrom(t *testing.T) {
 	if lc := licenseFrom("Apache-2.0"); lc.License == nil || lc.License.ID != "Apache-2.0" || lc.Expression != "" {
 		t.Errorf("single id → license.id, got %+v", lc)
