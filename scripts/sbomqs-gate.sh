@@ -3,61 +3,49 @@
 # regresses below its floor. Ratchet the floors up as score-lifting stages
 # (enrich/augment/quality-patch) land.
 #
-# Three gates (one per representative pipeline input):
-#   gomod-solo  --go-mod only (pass-through)          FLOOR
-#   image-solo  --image only (pass-through)           IMAGE_FLOOR
-#   merged      --image + --go-mod (sbomasm merge)    MERGED_FLOOR
+# Gates:
+#   gomod-solo  --go-mod only (pass-through)                       FLOOR
+#   merged      ko-built Go image + --go-mod (real sbomasm merge)  MERGED_FLOOR
+#   dogfood     sbom-quality scans its own image (scripts/dogfood.sh)
 #
-# Each gate also asserts sbom-utility validates the output — a regression in
-# either score or validity fails the build.
+# The merged gate ko-builds the fixture into a Go image (ko's default base) so the
+# merge does its real job — back-filling trivy's thin Go entries from gomod
+# (alpine has no Go, so its components never overlap). It asserts a merged Go
+# component carries a gomod-sourced SHA-256 hash — which trivy's image scan never
+# emits — proving the back-fill actually happened, not just that a merge ran.
 #
-# Requires cyclonedx-gomod, sbomasm, trivy, sbom-utility and sbomqs on PATH.
-# The image/merged gates pull IMAGE (a small public image); trivy runs image-pull only.
+# Requires cyclonedx-gomod, sbomasm, trivy, sbom-utility, sbomqs, ko, jq and a
+# docker daemon (ko --local loads the fixture image; the dogfood gate builds the
+# tool image).
 set -euo pipefail
 
-FLOOR="${FLOOR:-7.7}"
-IMAGE_FLOOR="${IMAGE_FLOOR:-6.6}"
-MERGED_FLOOR="${MERGED_FLOOR:-6.8}"
-IMAGE="${IMAGE:-alpine:3.20}"
+FLOOR="${FLOOR:-7.9}"
+MERGED_FLOOR="${MERGED_FLOOR:-6.4}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$REPO_ROOT/scripts/lib.sh"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
-# cyclonedx-gomod reads the module version from git, so stage the fixture in a
-# throwaway repo (the checked-in fixture can't carry its own .git).
-cp "$REPO_ROOT"/testdata/fixture-module/{go.mod,go.sum,main.go} "$WORK/"
-git -C "$WORK" init -q
-git -C "$WORK" add -A
-git -C "$WORK" -c user.email=ci@example.com -c user.name=ci commit -qm fixture
-git -C "$WORK" tag v0.1.0
-
+stage_fixture "$REPO_ROOT/testdata/fixture-module" "$WORK"
 go build -C "$REPO_ROOT" -o "$WORK/sbom-quality" ./cmd/sbom-quality
+SQ="$WORK/sbom-quality"
 
-# gate NAME FLOOR FILE — validate the SBOM, print its score report, and fail if
-# it is invalid or the score drops below FLOOR.
-gate() {
-	local name="$1" floor="$2" file="$3" score
-	echo "=== $name sbom-utility validate ==="
-	if ! sbom-utility validate --input-file "$file"; then
-		echo "::error::$name failed sbom-utility validation"
-		exit 1
-	fi
-	echo "=== $name sbomqs score ==="
-	sbomqs score "$file"
-	score="$(sbomqs score "$file" --basic | cut -f1)"
-	echo "$name score=$score floor=$floor"
-	if awk -v s="$score" -v f="$floor" 'BEGIN { exit !(s + 0 < f + 0) }'; then
-		echo "::error::$name sbomqs score $score is below floor $floor — SBOM quality regressed"
-		exit 1
-	fi
-	echo "OK: $name score $score meets floor $floor"
-}
-
-"$WORK/sbom-quality" --go-mod "$WORK" --supplier-name "sbom-quality CI" --author "sbom-quality CI" -o "$WORK/gomod.cdx.json"
+"$SQ" "${SQ_IDENTITY[@]}" --license "$SQ_LICENSE" --go-mod "$WORK" -o "$WORK/gomod.cdx.json"
 gate gomod-solo "$FLOOR" "$WORK/gomod.cdx.json"
 
-"$WORK/sbom-quality" --image "$IMAGE" --supplier-name "sbom-quality CI" --author "sbom-quality CI" -o "$WORK/image.cdx.json"
-gate image-solo "$IMAGE_FLOOR" "$WORK/image.cdx.json"
-
-"$WORK/sbom-quality" --image "$IMAGE" --go-mod "$WORK" --supplier-name "sbom-quality CI" --author "sbom-quality CI" -o "$WORK/merged.cdx.json"
+IMG="$(ko_build_fixture "$WORK")"
+echo "ko-built fixture image: $IMG"
+"$SQ" "${SQ_IDENTITY[@]}" --license "$SQ_LICENSE" --image "$IMG" --go-mod "$WORK" -o "$WORK/merged.cdx.json"
+# The merge's core job: back-fill trivy's thin Go entries from gomod. trivy's
+# image scan lists Go modules with a version but no hashes; gomod supplies the
+# SHA-256. A SHA-256 on any Go component is proof the back-fill ran — kept
+# component-agnostic so bumping the fixture's deps doesn't break the gate.
+if ! jq -e '.components[] | select(.purl // "" | startswith("pkg:golang/")) | .hashes[]? | select(.alg == "SHA-256")' "$WORK/merged.cdx.json" >/dev/null; then
+	echo "::error::merged SBOM has no gomod-sourced SHA-256 hash on any Go component — merge back-fill regressed"
+	exit 1
+fi
+echo "OK: merge back-filled a gomod SHA-256 hash onto a trivy Go component"
 gate merged "$MERGED_FLOOR" "$WORK/merged.cdx.json"
+
+# The tool describing the artifact it ships — highest-signal e2e.
+"$REPO_ROOT/scripts/dogfood.sh"
