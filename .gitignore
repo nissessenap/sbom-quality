@@ -30,6 +30,11 @@ go.work.sum
 # Generated SBOMs (repo root only — keep any committed testdata fixtures trackable)
 /*.cdx.json
 
+# Java fixture build outputs (testdata/fixture-maven, testdata/fixture-gradle)
+target/
+build/
+.gradle/
+
 # Editor/IDE
 # .idea/
 # .vscode/
