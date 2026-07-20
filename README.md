@@ -25,6 +25,19 @@ docker run --rm -v "$PWD":/work ghcr.io/nissessenap/sbom-quality:latest \
 The from-source binary (`go build ./cmd/sbom-quality`) runs the identical code
 path, expecting the same tools on `$PATH`.
 
+## Verifying what we ship
+
+Each released image carries two keyless (Sigstore/Fulcio) attestations bound to
+its digest: SLSA build provenance (how it was built) and a CycloneDX SBOM (what's
+in it). Verify them before trusting the image:
+
+```sh
+img=ghcr.io/nissessenap/sbom-quality:latest
+gh attestation verify "oci://$img" --repo nissessenap/sbom-quality
+gh attestation verify "oci://$img" --repo nissessenap/sbom-quality \
+  --predicate-type https://cyclonedx.org/bom
+```
+
 ## Validation
 
 Using a number of different tools to determine SBOM quality.
