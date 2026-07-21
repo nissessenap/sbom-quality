@@ -71,27 +71,57 @@ func TestPatchLiftsDistributionHashes(t *testing.T) {
 		t.Errorf("component hashes = %+v, want single SHA-512 %s lifted from distribution ref", h, sha)
 	}
 
-	// python (poetry): a platform-independent lock lists one distribution ref *per wheel*,
-	// each a SHA-256 for a different platform. The repeated algorithm means many artifacts,
-	// not many algs of one — no single hash is "the" component digest, so lift none.
+	// python (poetry), case (c): only per-platform wheels, no universal wheel or sdist.
+	// The repeated algorithm means many artifacts and none is platform-independent, so
+	// there's no faithful "the component" hash — lift none.
 	bom = patchBOM()
 	var manyRefs []cdx.ExternalReference
 	for i := range 5 {
 		manyRefs = append(manyRefs, cdx.ExternalReference{
 			Type:   cdx.ERTypeDistribution,
-			URL:    "https://files.pythonhosted.org/wheel-" + string(rune('a'+i)) + ".whl",
+			URL:    "https://files.pythonhosted.org/wheel-" + string(rune('a'+i)) + "-cp312-cp312-win_amd64.whl",
 			Hashes: &[]cdx.Hash{{Algorithm: cdx.HashAlgoSHA256, Value: sha}},
 		})
 	}
 	(*bom.Components)[0].ExternalReferences = &manyRefs
 	applyQualityPatch(bom)
 	if h := (*bom.Components)[0].Hashes; h != nil {
-		t.Errorf("component hashes = %+v, want none lifted from %d per-platform SHA-256s", h, len(manyRefs))
+		t.Errorf("component hashes = %+v, want none lifted from %d platform-only wheels", h, len(manyRefs))
 	}
 
-	// python (uv export/requirements): the same per-platform SHA-256s, but packed into ONE
-	// distribution ref instead of many. Same reality — repeated SHA-256 ⇒ lift none. (The
-	// bug the ref-count gate missed: one ref, many artifacts.)
+	// python (poetry), case (a): platform wheels + a universal py3-none-any wheel + sdist.
+	// Lift the universal wheel's SHA-256 (preferred over the sdist), not an arbitrary
+	// platform wheel.
+	const uni = "1111111111111111111111111111111111111111111111111111111111111111"
+	const sdist = "2222222222222222222222222222222222222222222222222222222222222222"
+	bom = patchBOM()
+	refs := append([]cdx.ExternalReference{}, manyRefs...)
+	refs = append(refs,
+		cdx.ExternalReference{Type: cdx.ERTypeDistribution, URL: "https://files.pythonhosted.org/pkg-1.0-py3-none-any.whl",
+			Hashes: &[]cdx.Hash{{Algorithm: cdx.HashAlgoSHA256, Value: uni}}},
+		cdx.ExternalReference{Type: cdx.ERTypeDistribution, URL: "https://files.pythonhosted.org/pkg-1.0.tar.gz",
+			Hashes: &[]cdx.Hash{{Algorithm: cdx.HashAlgoSHA256, Value: sdist}}},
+	)
+	(*bom.Components)[0].ExternalReferences = &refs
+	applyQualityPatch(bom)
+	if h := (*bom.Components)[0].Hashes; h == nil || len(*h) != 1 || (*h)[0].Value != uni {
+		t.Errorf("component hashes = %+v, want single universal-wheel SHA-256 %s", h, uni)
+	}
+
+	// python (poetry), case (b): platform wheels + sdist, no universal wheel. Lift the sdist.
+	bom = patchBOM()
+	refs = append([]cdx.ExternalReference{}, manyRefs...)
+	refs = append(refs, cdx.ExternalReference{Type: cdx.ERTypeDistribution, URL: "https://files.pythonhosted.org/pkg-1.0.tar.gz",
+		Hashes: &[]cdx.Hash{{Algorithm: cdx.HashAlgoSHA256, Value: sdist}}})
+	(*bom.Components)[0].ExternalReferences = &refs
+	applyQualityPatch(bom)
+	if h := (*bom.Components)[0].Hashes; h == nil || len(*h) != 1 || (*h)[0].Value != sdist {
+		t.Errorf("component hashes = %+v, want single sdist SHA-256 %s", h, sdist)
+	}
+
+	// python (uv export): the per-platform SHA-256s packed into ONE URL-less distribution
+	// ref. Repeated algorithm ⇒ fast path declines; no ref URL identifies a universal
+	// wheel/sdist ⇒ fallback lifts nothing either.
 	bom = patchBOM()
 	(*bom.Components)[0].ExternalReferences = &[]cdx.ExternalReference{{
 		Type:   cdx.ERTypeDistribution,
@@ -99,7 +129,7 @@ func TestPatchLiftsDistributionHashes(t *testing.T) {
 	}}
 	applyQualityPatch(bom)
 	if h := (*bom.Components)[0].Hashes; h != nil {
-		t.Errorf("component hashes = %+v, want none lifted from one ref carrying repeated SHA-256", h)
+		t.Errorf("component hashes = %+v, want none lifted from one URL-less ref of repeated SHA-256", h)
 	}
 
 	// single artifact, multiple algorithms (npm-style tarball with SHA-512 + SHA-1 of the
