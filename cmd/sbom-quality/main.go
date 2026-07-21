@@ -12,8 +12,9 @@ import (
 )
 
 type cli struct {
-	Image           string   `help:"Remote image ref (repo:tag or repo@sha256). At least one of --image/--go-mod is required."`
-	GoMod           string   `name:"go-mod" help:"Go module path (directory). At least one of --image/--go-mod is required."`
+	Image           string   `help:"Remote image ref (repo:tag or repo@sha256). At least one of --image/--go-mod/--sbom is required."`
+	GoMod           string   `name:"go-mod" help:"Go module path (directory). Mutually exclusive with --sbom."`
+	SBOM            string   `name:"sbom" help:"Bring-your-own CycloneDX dependency SBOM file (e.g. cyclonedx-maven/gradle). Mutually exclusive with --go-mod."`
 	SupplierName    string   `help:"Supplier name for document provenance." required:""`
 	SupplierURL     string   `name:"supplier-url" help:"Supplier URL for document provenance."`
 	SupplierContact string   `name:"supplier-contact" help:"Supplier contact (email or name) for document provenance."`
@@ -37,6 +38,7 @@ func main() {
 	cfg := pipeline.Config{
 		Image:           c.Image,
 		GoMod:           c.GoMod,
+		SBOM:            c.SBOM,
 		SupplierName:    c.SupplierName,
 		SupplierURL:     c.SupplierURL,
 		SupplierContact: c.SupplierContact,

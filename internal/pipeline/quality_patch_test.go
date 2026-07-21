@@ -176,3 +176,35 @@ func TestQualityPatchRoundTripEncodes16(t *testing.T) {
 		t.Errorf("compositions complete not in output:\n%s", out)
 	}
 }
+
+// TestPatchMavenLicenseShape covers the license shapes cyclonedx-maven/gradle emit
+// (the License branch: id-form and name-form), not gomod's (MIT) Expression paren
+// shape. Both must route through the Expression/License switch and gain
+// acknowledgement:declared without being mangled. Closes the LIGHT-VERIFY flag (#47).
+func TestPatchMavenLicenseShape(t *testing.T) {
+	bom := &cdx.BOM{
+		Components: &[]cdx.Component{
+			{Type: cdx.ComponentTypeLibrary, Name: "guava", BOMRef: "a",
+				Licenses: &cdx.Licenses{{License: &cdx.License{ID: "Apache-2.0"}}}},
+			{Type: cdx.ComponentTypeLibrary, Name: "commons-lang3", BOMRef: "b",
+				Licenses: &cdx.Licenses{{License: &cdx.License{Name: "The Apache Software License, Version 2.0"}}}},
+		},
+	}
+	applyQualityPatch(bom)
+
+	id := (*(*bom.Components)[0].Licenses)[0].License
+	if id.ID != "Apache-2.0" {
+		t.Errorf("id-form license mangled: id=%q", id.ID)
+	}
+	if id.Acknowledgement != cdx.LicenseAcknowledgementDeclared {
+		t.Errorf("id-form acknowledgement = %q, want declared", id.Acknowledgement)
+	}
+
+	nm := (*(*bom.Components)[1].Licenses)[0].License
+	if nm.Name != "The Apache Software License, Version 2.0" {
+		t.Errorf("name-form license mangled: name=%q", nm.Name)
+	}
+	if nm.Acknowledgement != cdx.LicenseAcknowledgementDeclared {
+		t.Errorf("name-form acknowledgement = %q, want declared", nm.Acknowledgement)
+	}
+}

@@ -22,6 +22,18 @@ docker run --rm -v "$PWD":/work ghcr.io/nissessenap/sbom-quality:latest \
   --image alpine:3.20 --go-mod /work --supplier-name "ACME" > sbom.cdx.json
 ```
 
+For Java (or any build env), bring your own CycloneDX dependency SBOM — e.g. one
+produced by `cyclonedx-maven` / `cyclonedx-gradle` in your CI — via `--sbom`
+(mutually exclusive with `--go-mod`, `--image` optional). No Java toolchain is
+bundled; the `--sbom` path is pure Go, accepts CycloneDX 1.6/1.7, and rejects
+anything older.
+
+```sh
+# BYO Java dependency SBOM + Jib image → one merged 1.6 SBOM
+docker run --rm -v "$PWD":/work ghcr.io/nissessenap/sbom-quality:latest \
+  --sbom /work/deps.cdx.json --image repo:tag --supplier-name "ACME" > sbom.cdx.json
+```
+
 The from-source binary (`go build ./cmd/sbom-quality`) runs the identical code
 path, expecting the same tools on `$PATH`.
 

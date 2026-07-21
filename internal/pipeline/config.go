@@ -35,7 +35,8 @@ func WarnMissingConfig(w io.Writer, cfg Config) {
 // Config is the resolved CLI input for one pipeline run.
 type Config struct {
 	Image string // remote image ref: repo:tag or repo@sha256
-	GoMod string // Go module path (directory)
+	GoMod string // Go module path (directory) — XOR SBOM
+	SBOM  string // BYO CycloneDX dependency SBOM file (e.g. cyclonedx-maven/gradle) — XOR GoMod
 
 	// Document-identity metadata, applied by the augment stage. SupplierName is
 	// required; the rest are optional (absent → stderr warning via WarnMissingConfig).

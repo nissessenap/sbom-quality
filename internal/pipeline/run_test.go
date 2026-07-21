@@ -14,3 +14,11 @@ func TestRunSourceValidation(t *testing.T) {
 		t.Fatalf("want 'at least one' error, got %v", err)
 	}
 }
+
+// --go-mod and --sbom are mutually exclusive; the guard runs before any tool.
+func TestRunGoModSBOMMutuallyExclusive(t *testing.T) {
+	_, err := Run(Config{GoMod: "./x", SBOM: "y.json", SupplierName: "X"})
+	if err == nil || !strings.Contains(err.Error(), "mutually exclusive") {
+		t.Fatalf("want 'mutually exclusive' error, got %v", err)
+	}
+}

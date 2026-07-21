@@ -1,19 +1,27 @@
 package pipeline
 
-import "errors"
+import (
+	"errors"
+	"os"
+)
 
 // Run executes the pipeline for cfg and returns the final CycloneDX 1.6 JSON.
-// Sources: --image (trivy, needs 1.6 down-convert) and/or --go-mod (cyclonedx-gomod,
-// emits 1.6 natively). At least one is required. With both sources the two SBOMs
-// are merged (trivy primary) via sbomasm; a solo run passes the generator's output
-// straight through. The merged-or-solo SBOM is then enriched by parlay (unless
-// --skip-enrichment) before validate — no merge tool is invoked for a solo run.
+// Sources: --image (trivy, needs 1.6 down-convert) plus at most one build source —
+// --go-mod (cyclonedx-gomod, native 1.6) XOR --sbom (a bring-your-own CycloneDX
+// dependency SBOM, e.g. from cyclonedx-maven/gradle, normalized to 1.6). At least
+// one source is required. With an image + a build source the two SBOMs are merged
+// (image primary, so OS packages are retained) via sbomasm; a solo run passes the
+// source straight through. The merged-or-solo SBOM is then enriched by parlay
+// (unless --skip-enrichment) before validate — no merge tool is invoked for a solo run.
 func Run(cfg Config) ([]byte, error) {
-	if cfg.Image == "" && cfg.GoMod == "" {
-		return nil, errors.New("at least one of --image or --go-mod is required")
+	if cfg.GoMod != "" && cfg.SBOM != "" {
+		return nil, errors.New("--go-mod and --sbom are mutually exclusive")
+	}
+	if cfg.Image == "" && cfg.GoMod == "" && cfg.SBOM == "" {
+		return nil, errors.New("at least one of --image, --go-mod, or --sbom is required")
 	}
 
-	var image, gomod []byte
+	var image, buildSBOM []byte
 	var err error
 	if cfg.Image != "" {
 		// trivy emits 1.7; down-convert to 1.6 before merge/validate.
@@ -25,24 +33,30 @@ func Run(cfg Config) ([]byte, error) {
 			return nil, err
 		}
 	}
-	if cfg.GoMod != "" {
+	switch {
+	case cfg.GoMod != "":
 		// gomod emits 1.6 natively.
-		if gomod, err = generateGoMod(cfg.GoMod); err != nil {
+		if buildSBOM, err = generateGoMod(cfg.GoMod); err != nil {
+			return nil, err
+		}
+	case cfg.SBOM != "":
+		// BYO CycloneDX dependency SBOM: validate at the trust boundary + normalize to 1.6.
+		if buildSBOM, err = acquireSBOM(cfg.SBOM, os.Stderr); err != nil {
 			return nil, err
 		}
 	}
 
 	var sbom []byte
 	switch {
-	case cfg.Image != "" && cfg.GoMod != "":
-		// Both sources: merge trivy (primary, keeps OS packages) with gomod.
-		if sbom, err = merge(image, gomod); err != nil {
+	case cfg.Image != "" && buildSBOM != nil:
+		// Both sources: merge image (primary, keeps OS packages) with the build SBOM.
+		if sbom, err = merge(image, buildSBOM); err != nil {
 			return nil, err
 		}
 	case cfg.Image != "":
 		sbom = image // solo image, pass through
 	default:
-		sbom = gomod // solo gomod, pass through
+		sbom = buildSBOM // solo build source, pass through
 	}
 
 	// enrich: parlay fills supplier/license/VCS for Go components from the
