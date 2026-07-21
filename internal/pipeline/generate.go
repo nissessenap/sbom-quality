@@ -2,10 +2,18 @@ package pipeline
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
+	"time"
 )
+
+// toolTimeout caps every external-tool invocation (runTool + validateReport).
+// A hung tool (bad input, network stall, deadlocked child) would otherwise hang
+// the run — and CI — indefinitely. Central default; a var (not const) so tests
+// can shorten it. Bump per-tool only if one legitimately needs longer.
+var toolTimeout = 5 * time.Minute
 
 // generateImage runs trivy against a remote image ref and returns its CycloneDX
 // JSON. --format cyclonedx puts trivy in SBOM-generation mode: image-pull only,
@@ -29,11 +37,17 @@ func runTool(bin string, args ...string) ([]byte, error) {
 		return nil, fmt.Errorf("%s not found on PATH: %w", bin, err)
 	}
 
+	ctx, cancel := context.WithTimeout(context.Background(), toolTimeout)
+	defer cancel()
+
 	var stdout, stderr bytes.Buffer
-	cmd := exec.Command(bin, args...)
+	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return nil, fmt.Errorf("%s timed out after %s", bin, toolTimeout)
+		}
 		return nil, fmt.Errorf("%s %v failed: %w\n%s", bin, args, err, stderr.String())
 	}
 	return stdout.Bytes(), nil
