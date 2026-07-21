@@ -34,6 +34,9 @@ docker run --rm -v "$PWD":/work ghcr.io/nissessenap/sbom-quality:latest \
   --sbom /work/deps.cdx.json --image repo:tag --supplier-name "ACME" > sbom.cdx.json
 ```
 
+See [docs/java.md](docs/java.md) for pinned, runnable Maven and Gradle build-plugin
+examples (and the cdxgen fallback and its trade-offs).
+
 The from-source binary (`go build ./cmd/sbom-quality`) runs the identical code
 path, expecting the same tools on `$PATH`.
 

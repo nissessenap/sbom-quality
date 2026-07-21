@@ -1,0 +1,65 @@
+name: sbomqs gate (java)
+
+# Java golden gate: build dependency SBOMs from the Maven + Gradle fixtures via the
+# recommended build plugins, run the full --sbom pipeline (incl. a Jib image merge),
+# and fail if the sbomqs score regresses below the floor in scripts/sbomqs-gate-java.sh
+# or sbom-utility rejects 1.6 conformance. Independent of the Go gate — it needs a JDK
+# and never installs cyclonedx-gomod/ko, so the Go gate never grows a JVM dependency.
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  sbomqs-gate-java:
+    runs-on: ubuntu-latest
+    env:
+      SBOMASM_VERSION: v2.0.9
+      PARLAY_VERSION: v0.11.0
+      SBOM_UTILITY_VERSION: v0.19.2
+      SBOMQS_VERSION: v2.0.8
+      TRIVY_VERSION: v0.72.0
+      CDX_MAVEN_VERSION: "2.9.1"
+      CDX_GRADLE_VERSION: "2.3.1"
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install SBOM tools
+        run: |
+          go install "github.com/interlynk-io/sbomasm/v2@${SBOMASM_VERSION}"
+          go install "github.com/snyk/parlay@${PARLAY_VERSION}"
+          go install "github.com/CycloneDX/sbom-utility@${SBOM_UTILITY_VERSION}"
+          go install "github.com/interlynk-io/sbomqs/v2@${SBOMQS_VERSION}"
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Install trivy
+        run: |
+          curl -sSL "https://github.com/aquasecurity/trivy/releases/download/${TRIVY_VERSION}/trivy_${TRIVY_VERSION#v}_Linux-64bit.tar.gz" -o trivy.tar.gz
+          tar -xzf trivy.tar.gz trivy
+          sudo install trivy /usr/local/bin/trivy
+          rm trivy trivy.tar.gz
+          trivy --version
+
+      - name: sbomqs gate (java, scored)
+        run: ./scripts/sbomqs-gate-java.sh
+
+      # cdxgen fallback compat check (light, non-scored) — needs Node.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install cdxgen
+        run: npm install -g @cyclonedx/cdxgen@11.1.5
+
+      - name: cdxgen fallback compat check
+        run: ./scripts/cdxgen-compat.sh
