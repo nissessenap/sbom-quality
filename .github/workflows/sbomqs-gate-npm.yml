@@ -1,0 +1,50 @@
+name: sbomqs gate (npm)
+
+# npm golden gate: build a dependency SBOM from the npm fixture via the recommended
+# generator (@cyclonedx/cyclonedx-npm), run the full --sbom pipeline, and fail if the
+# sbomqs score regresses below the floor in scripts/sbomqs-gate-npm.sh or sbom-utility
+# rejects 1.6 conformance. Independent of the Go/Java gates — it needs only Node, so
+# those gates never grow a Node dependency.
+on:
+  pull_request:
+    # Docs-only PRs can't change the produced SBOM; skip the gate. paths-ignore (not
+    # an allowlist) keeps the gate running on any code/script/workflow change.
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+
+# Cancel a superseded in-progress run when a PR is pushed again.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  sbomqs-gate-npm:
+    runs-on: ubuntu-latest
+    env:
+      PARLAY_VERSION: v0.11.0
+      SBOM_UTILITY_VERSION: v0.19.2
+      SBOMQS_VERSION: v2.0.8
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install SBOM tools
+        run: |
+          go install "github.com/snyk/parlay@${PARLAY_VERSION}"
+          go install "github.com/CycloneDX/sbom-utility@${SBOM_UTILITY_VERSION}"
+          go install "github.com/interlynk-io/sbomqs/v2@${SBOMQS_VERSION}"
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: sbomqs gate (npm, scored)
+        run: ./scripts/sbomqs-gate-npm.sh

@@ -18,7 +18,7 @@ The locked MVP spec lives in **GitHub issue #15** — read it before non-trivial
 | quality-patch | **native** | score-tuning: declared acknowledgements, compositions, supplier/license back-fill, primary SHA-256 |
 | validate | sbom-utility | fail-loud CycloneDX 1.6 conformance; demotes a license.id the validator's SPDX list is too old to know (e.g. trivy's `Artistic-dist`) to a free-form name, then re-validates |
 
-Native stages assert only faithful *declared* data — never `acknowledgement:concluded` (see #15, #30). Per-flag docs live in `--help`; score floors live in `./scripts/sbomqs-gate.sh` (Go) and `./scripts/sbomqs-gate-java.sh` (Java, via `--sbom`); Java usage in `docs/java.md`.
+Native stages assert only faithful *declared* data — never `acknowledgement:concluded` (see #15, #30). Per-flag docs live in `--help`; score floors live in `./scripts/sbomqs-gate.sh` (Go), `./scripts/sbomqs-gate-java.sh` (Java, via `--sbom`) and `./scripts/sbomqs-gate-npm.sh` (npm, via `--sbom`); Java usage in `docs/java.md`, npm in `docs/npm.md`.
 
 ## Layout
 
