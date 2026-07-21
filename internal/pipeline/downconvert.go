@@ -41,11 +41,17 @@ func downConvertTo16(in []byte) ([]byte, error) {
 	return reencode16(in, nil)
 }
 
+// minSBOMSpec is the oldest CycloneDX version --sbom accepts. 1.5 is the floor because
+// cargo-cyclonedx maxes at 1.5 (its 1.6 support is upstream #769, still open); anything
+// older is genuinely lower-fidelity and rejected loudly. cyclonedx-go decodes 1.5 into
+// the same version-agnostic BOM, so encode16 up-converts it to 1.6 losslessly.
+const minSBOMSpec = cdx.SpecVersion1_5
+
 // acquireSBOM reads a bring-your-own CycloneDX dependency SBOM (the --sbom source),
 // validates it at the trust boundary, and normalizes it to 1.6. Decoding is the
 // CycloneDX-validity check (a non-CycloneDX blob fails to decode); a document below
-// spec 1.6 is rejected loudly; 1.7 is accepted with a stderr warning (warn) and
-// down-converted. Normalization reuses reencode16 — the only new logic is the guard.
+// minSBOMSpec is rejected loudly; 1.5 is up-converted and 1.7 down-converted, each with a
+// stderr warning (warn). Normalization reuses encode16 — the only new logic is the guard.
 func acquireSBOM(path string, warn io.Writer) ([]byte, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -56,14 +62,16 @@ func acquireSBOM(path string, warn io.Writer) ([]byte, error) {
 		return nil, fmt.Errorf("decode --sbom %s: %w", path, err)
 	}
 	// Well-formed JSON that isn't CycloneDX (e.g. SPDX) decodes without error but has
-	// no bomFormat; reject it here so the message isn't a confusing "CycloneDX 0 is below 1.6".
+	// no bomFormat; reject it here so the message isn't a confusing "CycloneDX 0 is below 1.5".
 	if bom.BOMFormat != cdx.BOMFormat {
 		return nil, fmt.Errorf("--sbom %s: not a CycloneDX document (bomFormat=%q)", path, bom.BOMFormat)
 	}
-	if bom.SpecVersion < cdx.SpecVersion1_6 {
-		return nil, fmt.Errorf("--sbom %s: CycloneDX %s is below the 1.6 minimum", path, bom.SpecVersion)
-	}
-	if bom.SpecVersion > cdx.SpecVersion1_6 {
+	switch {
+	case bom.SpecVersion < minSBOMSpec:
+		return nil, fmt.Errorf("--sbom %s: CycloneDX %s is below the %s minimum", path, bom.SpecVersion, minSBOMSpec)
+	case bom.SpecVersion < cdx.SpecVersion1_6:
+		fmt.Fprintf(warn, "sbom-quality: warning: --sbom %s is CycloneDX %s; up-converting to 1.6\n", path, bom.SpecVersion)
+	case bom.SpecVersion > cdx.SpecVersion1_6:
 		fmt.Fprintf(warn, "sbom-quality: warning: --sbom %s is CycloneDX %s; down-converting to 1.6\n", path, bom.SpecVersion)
 	}
 	return encode16(&bom)
