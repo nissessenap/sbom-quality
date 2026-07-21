@@ -28,6 +28,8 @@ func qualityPatch(sbom []byte) ([]byte, error) {
 // directly). Five patches, all score-tuning only:
 //  1. every license gets acknowledgement:declared; SPDX expressions are unwrapped to
 //     license.name (CDX 1.6 rejects non-enum ids inside expressions, name is free-form).
+//     Per-component checksums a generator parked on a "distribution" externalReference
+//     (e.g. cyclonedx-npm maps npm `integrity` there) are lifted into component.hashes.
 //  2. compositions declared complete.
 //  3. primary-component SHA-256 checksum lifted from its oci purl when hashes are absent.
 //  4. our own supplier (metadata.supplier) back-filled onto wrapper components lacking one.
@@ -36,13 +38,16 @@ func qualityPatch(sbom []byte) ([]byte, error) {
 // Patches 3–5 assert only *our own* provenance (the primary digest / doc supplier / primary
 // license), never third-party data we can't verify.
 func applyQualityPatch(bom *cdx.BOM) {
-	// 1. license normalization — walk the primary component and every component.
+	// 1. license normalization + distribution-hash lift — walk the primary component
+	// and every component.
 	if bom.Metadata != nil && bom.Metadata.Component != nil {
 		normalizeComponentLicenses(bom.Metadata.Component)
+		liftDistributionHashes(bom.Metadata.Component)
 	}
 	if bom.Components != nil {
 		for i := range *bom.Components {
 			normalizeComponentLicenses(&(*bom.Components)[i])
+			liftDistributionHashes(&(*bom.Components)[i])
 		}
 	}
 
@@ -139,6 +144,30 @@ func normalizeComponentLicenses(c *cdx.Component) {
 	if c.Components != nil {
 		for i := range *c.Components {
 			normalizeComponentLicenses(&(*c.Components)[i])
+		}
+	}
+}
+
+// liftDistributionHashes surfaces per-component checksums a generator parked on a
+// "distribution" externalReference (cyclonedx-npm maps npm `integrity` there, not onto
+// the component) into component.hashes, where sbomqs credits them. Faithful: the same
+// digest, relocated — only when the component carries no hashes of its own. Recurses
+// into nested components, matching normalizeComponentLicenses.
+func liftDistributionHashes(c *cdx.Component) {
+	if (c.Hashes == nil || len(*c.Hashes) == 0) && c.ExternalReferences != nil {
+		var lifted []cdx.Hash
+		for _, ref := range *c.ExternalReferences {
+			if ref.Type == cdx.ERTypeDistribution && ref.Hashes != nil {
+				lifted = append(lifted, *ref.Hashes...)
+			}
+		}
+		if len(lifted) > 0 {
+			c.Hashes = &lifted
+		}
+	}
+	if c.Components != nil {
+		for i := range *c.Components {
+			liftDistributionHashes(&(*c.Components)[i])
 		}
 	}
 }

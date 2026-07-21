@@ -1,0 +1,11 @@
+{
+  "name": "fixture-npm",
+  "version": "1.0.0",
+  "description": "Throwaway npm fixture for the --sbom golden gate: a few real registry deps with transitives so integrity hashes are present.",
+  "license": "Apache-2.0",
+  "private": true,
+  "dependencies": {
+    "debug": "4.3.7",
+    "is-odd": "3.0.1"
+  }
+}

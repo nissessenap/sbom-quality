@@ -138,6 +138,46 @@ func TestPatchPrimaryChecksumFromPurl(t *testing.T) {
 	}
 }
 
+func TestPatchLiftsDistributionHashes(t *testing.T) {
+	const sha = "abc123abc123abc123abc123abc123abc123abc123abc123abc123abc123abcd"
+	bom := patchBOM()
+	// cyclonedx-npm parks the integrity hash on a distribution externalReference, not
+	// on the component. The dep component has no hashes of its own.
+	(*bom.Components)[0].ExternalReferences = &[]cdx.ExternalReference{{
+		Type:   cdx.ERTypeDistribution,
+		URL:    "https://registry.npmjs.org/dep/-/dep-1.0.0.tgz",
+		Hashes: &[]cdx.Hash{{Algorithm: cdx.HashAlgoSHA512, Value: sha}},
+	}}
+	applyQualityPatch(bom)
+
+	h := (*bom.Components)[0].Hashes
+	if h == nil || len(*h) != 1 || (*h)[0].Algorithm != cdx.HashAlgoSHA512 || (*h)[0].Value != sha {
+		t.Errorf("component hashes = %+v, want single SHA-512 %s lifted from distribution ref", h, sha)
+	}
+
+	// a component that already has hashes is left untouched.
+	bom = patchBOM()
+	orig := &[]cdx.Hash{{Algorithm: cdx.HashAlgoSHA256, Value: sha}}
+	(*bom.Components)[0].Hashes = orig
+	(*bom.Components)[0].ExternalReferences = &[]cdx.ExternalReference{{
+		Type: cdx.ERTypeDistribution, Hashes: &[]cdx.Hash{{Algorithm: cdx.HashAlgoSHA512, Value: "other"}},
+	}}
+	applyQualityPatch(bom)
+	if h := (*bom.Components)[0].Hashes; h == nil || len(*h) != 1 || (*h)[0].Algorithm != cdx.HashAlgoSHA256 {
+		t.Errorf("existing hashes overwritten: %+v", h)
+	}
+
+	// a non-distribution ref (e.g. vcs) with hashes is ignored.
+	bom = patchBOM()
+	(*bom.Components)[0].ExternalReferences = &[]cdx.ExternalReference{{
+		Type: cdx.ERTypeVCS, Hashes: &[]cdx.Hash{{Algorithm: cdx.HashAlgoSHA512, Value: sha}},
+	}}
+	applyQualityPatch(bom)
+	if (*bom.Components)[0].Hashes != nil {
+		t.Errorf("hashes lifted from a non-distribution ref: %+v", (*bom.Components)[0].Hashes)
+	}
+}
+
 func TestSHA256FromPurl(t *testing.T) {
 	const hex = "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
 	if got := sha256FromPurl("pkg:oci/x@sha256:" + hex); got != hex {
