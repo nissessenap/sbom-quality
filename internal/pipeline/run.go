@@ -59,8 +59,8 @@ func Run(cfg Config) ([]byte, error) {
 		sbom = buildSBOM // solo build source, pass through
 	}
 
-	// enrich: parlay fills supplier/license/VCS for Go components from the
-	// registry. --skip-enrichment is the sole opt-out; otherwise fail-loud.
+	// enrich: parlay fills supplier/license/VCS for Go and Maven components from
+	// the registry. --skip-enrichment is the sole opt-out; otherwise fail-loud.
 	if !cfg.SkipEnrichment {
 		if sbom, err = enrich(sbom); err != nil {
 			return nil, err
@@ -84,7 +84,7 @@ func Run(cfg Config) ([]byte, error) {
 		return nil, err
 	}
 
-	if err := validate(sbom); err != nil {
+	if sbom, err = validate(sbom); err != nil {
 		return nil, err
 	}
 	return sbom, nil

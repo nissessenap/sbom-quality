@@ -13,12 +13,12 @@ The locked MVP spec lives in **GitHub issue #15** — read it before non-trivial
 |-------|---------------|------|
 | generate | trivy / cyclonedx-gomod | image & Go-module component inventory |
 | merge | sbomasm | one 1.6 doc from `--image` + `--go-mod` |
-| enrich | parlay | supplier / license / VCS for Go components |
+| enrich | parlay | supplier / license / VCS for Go and Maven components |
 | augment | **native** | document-identity metadata: supplier, authors, lifecycle, data-license |
 | quality-patch | **native** | score-tuning: declared acknowledgements, compositions, supplier/license back-fill, primary SHA-256 |
-| validate | sbom-utility | fail-loud CycloneDX 1.6 conformance |
+| validate | sbom-utility | fail-loud CycloneDX 1.6 conformance; demotes a license.id the validator's SPDX list is too old to know (e.g. trivy's `Artistic-dist`) to a free-form name, then re-validates |
 
-Native stages assert only faithful *declared* data — never `acknowledgement:concluded` (see #15, #30). Per-flag docs live in `--help`; score floors live in `./scripts/sbomqs-gate.sh`.
+Native stages assert only faithful *declared* data — never `acknowledgement:concluded` (see #15, #30). Per-flag docs live in `--help`; score floors live in `./scripts/sbomqs-gate.sh` (Go) and `./scripts/sbomqs-gate-java.sh` (Java, via `--sbom`); Java usage in `docs/java.md`.
 
 ## Layout
 

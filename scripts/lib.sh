@@ -33,6 +33,22 @@ stage_fixture() {
 	git -C "$dst" tag v0.1.0
 }
 
+# stage_gradle SRC DST — copy the Gradle fixture's build inputs into a fresh dir
+# under DST with a clean, remote-less git repo, and echo that dir. The
+# cyclonedx-gradle plugin derives a VCS external reference from git origin; a
+# scp-style origin (git@host:org/repo) normalizes to a non-IRI URL that fails CDX
+# 1.6 validation. Building from a remote-less checkout makes the gate deterministic
+# regardless of the host's git remote (in GitHub CI the origin is https, valid).
+stage_gradle() {
+	local src="$1" dst="$2/gradle-src"
+	mkdir -p "$dst"
+	cp -r "$src"/{build.gradle.kts,settings.gradle.kts,gradlew,gradle,src} "$dst/"
+	git -C "$dst" init -q
+	git -C "$dst" add -A
+	git -C "$dst" -c user.email=ci@example.com -c user.name=ci commit -qm fixture
+	echo "$dst"
+}
+
 # ko_build_fixture DIR — ko-build the staged module in DIR into the local docker
 # daemon and echo the resulting image ref (build logs go to stderr). Uses ko's
 # default base (chainguard static) unpinned — deliberately realistic to how ko is

@@ -24,7 +24,7 @@ type cli struct {
 	Lifecycle       string   `help:"Lifecycle phase (e.g. build, post-build)." default:"build"`
 	DataLicense     string   `name:"data-license" help:"SBOM document data license (SPDX id)." default:"CC0-1.0"`
 	NoCIAutodetect  bool     `name:"no-ci-autodetect" help:"Disable GitHub CI-env VCS autodetect (url/commit/ref)."`
-	SkipEnrichment  bool     `name:"skip-enrichment" help:"Skip the parlay enrich stage (supplier/license/VCS for Go components)."`
+	SkipEnrichment  bool     `name:"skip-enrichment" help:"Skip the parlay enrich stage (supplier/license/VCS for Go/Maven components)."`
 	Output          string   `name:"output" short:"o" help:"Write SBOM to a file instead of stdout."`
 }
 
