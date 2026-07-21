@@ -7,6 +7,16 @@ name: sbomqs gate (java)
 # and never installs cyclonedx-gomod/ko, so the Go gate never grows a JVM dependency.
 on:
   pull_request:
+    # Docs-only PRs can't change the produced SBOM; skip the gate. paths-ignore (not
+    # an allowlist) keeps the gate running on any code/script/workflow change.
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+
+# Cancel a superseded in-progress run when a PR is pushed again.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read

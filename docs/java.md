@@ -85,8 +85,9 @@ sbom-quality --image <image> --sbom build/reports/bom.json \
 also covers Python/npm/etc. Use it when the native build plugins don't fit. It works
 through `--sbom`, but with trade-offs vs the build plugins:
 
-- **0% component hashes** (build plugins emit ~90–100%) → lower sbomqs (~5.5 raw vs
-  ~6.4–6.8) and weaker component identity.
+- **0% component hashes** (build plugins emit ~90–100%) → lower sbomqs on the raw
+  generator output (cdxgen ~5.5 vs build-plugin ~6.4–6.8, both pre-pipeline; the
+  ~8.3 above is post-pipeline) and weaker component identity.
 - **Defaults to CycloneDX 1.7** — pin `--spec-version 1.6` to match the pipeline.
 - **Needs Node** on the runner (`actions/setup-node`).
 

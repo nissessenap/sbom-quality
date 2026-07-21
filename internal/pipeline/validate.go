@@ -102,30 +102,57 @@ func staleLicenseIDs(errs []schemaError) map[string]bool {
 }
 
 // demoteLicenseIDs moves every license whose id is in stale from the SPDX id field
-// to the free-form name field, across the primary component and all (nested)
-// components. The value is preserved verbatim; only the field changes.
+// to the free-form name field, everywhere staleLicenseIDs can flag one: the
+// document-level metadata.licenses, the primary component, the (nested) component
+// tree, and the (nested) service tree. The scope must match staleLicenseIDs' field
+// match exactly — a stale id it flags but this leaves un-demoted would survive the
+// re-validate and abort a run that was actually repairable.
 func demoteLicenseIDs(bom *cdx.BOM, stale map[string]bool) {
-	if bom.Metadata != nil && bom.Metadata.Component != nil {
-		demoteComponentLicenseIDs(bom.Metadata.Component, stale)
+	if bom.Metadata != nil {
+		demoteLicenseList(bom.Metadata.Licenses, stale)
+		if bom.Metadata.Component != nil {
+			demoteComponentLicenseIDs(bom.Metadata.Component, stale)
+		}
 	}
 	if bom.Components != nil {
 		for i := range *bom.Components {
 			demoteComponentLicenseIDs(&(*bom.Components)[i], stale)
 		}
 	}
+	if bom.Services != nil {
+		for i := range *bom.Services {
+			demoteServiceLicenseIDs(&(*bom.Services)[i], stale)
+		}
+	}
+}
+
+// demoteLicenseList demotes stale ids to names in one license list. The value is
+// preserved verbatim; only the field changes.
+func demoteLicenseList(lics *cdx.Licenses, stale map[string]bool) {
+	if lics == nil {
+		return
+	}
+	for i := range *lics {
+		if lc := (*lics)[i].License; lc != nil && stale[lc.ID] {
+			lc.Name, lc.ID = lc.ID, ""
+		}
+	}
 }
 
 func demoteComponentLicenseIDs(c *cdx.Component, stale map[string]bool) {
-	if c.Licenses != nil {
-		for i := range *c.Licenses {
-			if lc := (*c.Licenses)[i].License; lc != nil && stale[lc.ID] {
-				lc.Name, lc.ID = lc.ID, ""
-			}
-		}
-	}
+	demoteLicenseList(c.Licenses, stale)
 	if c.Components != nil {
 		for i := range *c.Components {
 			demoteComponentLicenseIDs(&(*c.Components)[i], stale)
+		}
+	}
+}
+
+func demoteServiceLicenseIDs(s *cdx.Service, stale map[string]bool) {
+	demoteLicenseList(s.Licenses, stale)
+	if s.Services != nil {
+		for i := range *s.Services {
+			demoteServiceLicenseIDs(&(*s.Services)[i], stale)
 		}
 	}
 }
@@ -135,7 +162,7 @@ func schemaErrorf(errs []schemaError) error {
 	var b strings.Builder
 	fmt.Fprintf(&b, "invalid SBOM: %d schema error(s):", len(errs))
 	for _, e := range errs {
-		fmt.Fprintf(&b, "\n  [%s] %s", e.Type, e.Field)
+		fmt.Fprintf(&b, "\n  [%s] %s = %v", e.Type, e.Field, e.Value)
 	}
 	return errors.New(b.String())
 }
