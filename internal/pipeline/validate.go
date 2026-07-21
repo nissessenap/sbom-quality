@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -67,12 +68,18 @@ func validateReport(sbom []byte) ([]schemaError, error) {
 	}
 	defer os.Remove(path)
 
+	ctx, cancel := context.WithTimeout(context.Background(), toolTimeout)
+	defer cancel()
+
 	var stdout, stderr bytes.Buffer
-	cmd := exec.Command("sbom-utility", "validate", "--input-file", path, "--format", "json")
+	cmd := exec.CommandContext(ctx, "sbom-utility", "validate", "--input-file", path, "--format", "json")
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err = cmd.Run(); err == nil {
 		return nil, nil // valid
+	}
+	if ctx.Err() == context.DeadlineExceeded {
+		return nil, fmt.Errorf("sbom-utility validate timed out after %s", toolTimeout)
 	}
 	var exitErr *exec.ExitError
 	if !errors.As(err, &exitErr) {
