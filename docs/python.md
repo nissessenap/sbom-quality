@@ -65,29 +65,28 @@ Trade-off vs `poetry` mode: a bare requirements file has no project, so the SBOM
 carries **no primary component** (≈ −0.6 post-pipeline). Prefer `poetry` where a
 primary-component identity matters.
 
-## uv — export to requirements (recommended for uv projects)
+## uv — `uv export --format cyclonedx1.5` (recommended for uv projects)
 
-`uv.lock` has **no native parser** in cyclonedx-py or cdxgen yet, and `uv export
---format cyclonedx1.5` emits **1.5**, which the pipeline's `<1.6` guard rejects. Until
-a native 1.6 `uv.lock` path lands, export a hash-pinned `requirements.txt` and feed it
-through the requirements generator above:
+uv exports CycloneDX **natively** — no cyclonedx-py, no intermediate file. The pipeline
+accepts CycloneDX ≥ 1.5 and up-converts to 1.6 losslessly, so uv's 1.5 output plugs
+straight in:
 
 ```sh
-uv export --format requirements-txt --no-emit-project --hashes -o requirements.txt
-cyclonedx-py requirements requirements.txt -o bom.json      # native CycloneDX 1.6
+uv export --format cyclonedx1.5 -o bom.json     # native, with primary component + graph
 
 sbom-quality --sbom bom.json --supplier-name "ACME" > sbom.cdx.json
 ```
 
-Measured post-pipeline sbomqs (uv 0.9, cyclonedx-py 7.3.0): solo `--sbom` ≈ **6.1** —
-about 0.6 below `poetry` mode's ≈ 6.7, entirely because a requirements set has **no
-primary component**. Same as poetry, the per-platform hashes stay on the distribution
-refs (see [Where the hashes go](#where-the-hashes-go)); neither path earns the
-integrity credit.
+Measured post-pipeline sbomqs (uv 0.9): solo `--sbom` ≈ **6.6** — on par with `poetry`
+mode (≈ 6.7), because uv's export carries **both** a primary component and the full
+dependency graph. Like every Python lock it records no per-artifact hashes, so it earns
+no integrity credit (see [Where the hashes go](#where-the-hashes-go)) — but nor does any
+other Python path.
 
-`cyclonedx-py environment .venv` (after `uv sync`) also works but scores lower (≈ 5.8):
-installed dist-info records no artifact hashes and still yields no primary component.
-Prefer the requirements export.
+Prefer this over exporting to `requirements.txt` and running `cyclonedx-py requirements`:
+that hop needs a second tool and drops the primary component (≈ 6.1). `cyclonedx-py
+environment .venv` (after `uv sync`) scores lower still (≈ 5.8): installed dist-info has
+neither hashes nor a primary component.
 
 ## cdxgen fallback (polyglot / non-poetry builds)
 
