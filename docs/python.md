@@ -12,7 +12,7 @@ environment), emits **native CycloneDX 1.6** with no flags, and — from `poetry
 a primary component and the dependency graph. cdxgen is a documented fallback for
 polyglot builds (bottom of this page).
 
-Measured post-pipeline sbomqs (cyclonedx-py 7.3.0, `poetry` mode): solo `--sbom` ≈ **8.3**.
+Measured post-pipeline sbomqs (cyclonedx-py 7.3.0, `poetry` mode): solo `--sbom` ≈ **6.7**.
 
 ## Poetry — `cyclonedx-py poetry` (recommended)
 
@@ -41,10 +41,18 @@ GitHub Actions:
 
 `poetry.lock` pins per-artifact SHA-256 hashes, but cyclonedx-py records them under
 `externalReferences[type=distribution]`, **not** `component.hashes` — where sbomqs'
-integrity check can't see them. The pipeline's quality-patch surfaces one such
-SHA-256 as a component-level hash (faithful: the same digest is already in the doc),
-which is worth ≈ 1.6 points of the score above. This is a generic, language-blind
-patch — it also lifts npm/other generators that use the same shape.
+integrity check can't see them. The pipeline **does not** lift these onto the
+components: a lock is platform-independent, so it lists one wheel (one distinct
+SHA-256) *per platform*, and no single one is the package's checksum. Stamping an
+arbitrary wheel's hash onto the component would advertise a digest that fails
+verification on every other platform — so the hashes stay on the distribution refs,
+correctly URL-scoped, and sbomqs' integrity check goes uncredited (≈ 1.6 points).
+
+If you want that credit *faithfully*, generate a **per-platform** SBOM where each
+component resolves to a single artifact — `cyclonedx-py environment` (scans an
+installed venv) or an npm-style single-tarball generator. The quality-patch lifts a
+component hash only when there is exactly one distribution ref, which is precisely
+those cases.
 
 ## pip / requirements — `cyclonedx-py requirements`
 

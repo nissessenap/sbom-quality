@@ -71,20 +71,34 @@ func TestPatchLiftsDistributionHashes(t *testing.T) {
 		t.Errorf("component hashes = %+v, want single SHA-512 %s lifted from distribution ref", h, sha)
 	}
 
-	// python (poetry): one distribution ref *per wheel* — dozens. Lift only the first ref's
-	// hashes, never all of them (a component doesn't have 90 distinct digests).
+	// python (poetry): a platform-independent lock lists one distribution ref *per wheel*,
+	// each a distinct SHA-256 for a different platform. No single one is "the" component
+	// digest, so we must NOT lift any — stamping one arbitrary wheel's hash would fail
+	// verification on every other platform.
 	bom = patchBOM()
 	var manyRefs []cdx.ExternalReference
-	for range 5 {
+	for i := range 5 {
 		manyRefs = append(manyRefs, cdx.ExternalReference{
 			Type:   cdx.ERTypeDistribution,
+			URL:    "https://files.pythonhosted.org/wheel-" + string(rune('a'+i)) + ".whl",
 			Hashes: &[]cdx.Hash{{Algorithm: cdx.HashAlgoSHA256, Value: sha}},
 		})
 	}
 	(*bom.Components)[0].ExternalReferences = &manyRefs
 	applyQualityPatch(bom)
-	if h := (*bom.Components)[0].Hashes; h == nil || len(*h) != 1 {
-		t.Errorf("component hashes = %+v, want exactly one (first dist ref), not all %d", h, len(manyRefs))
+	if h := (*bom.Components)[0].Hashes; h != nil {
+		t.Errorf("component hashes = %+v, want none lifted from %d ambiguous distribution refs", h, len(manyRefs))
+	}
+
+	// mixed refs: exactly one distribution (+ a vcs ref) is unambiguous — lift it.
+	bom = patchBOM()
+	(*bom.Components)[0].ExternalReferences = &[]cdx.ExternalReference{
+		{Type: cdx.ERTypeVCS, URL: "https://github.com/x/y"},
+		{Type: cdx.ERTypeDistribution, Hashes: &[]cdx.Hash{{Algorithm: cdx.HashAlgoSHA256, Value: sha}}},
+	}
+	applyQualityPatch(bom)
+	if h := (*bom.Components)[0].Hashes; h == nil || len(*h) != 1 || (*h)[0].Value != sha {
+		t.Errorf("component hashes = %+v, want the lone distribution ref's hash lifted", h)
 	}
 
 	// a component that already has hashes is left untouched.

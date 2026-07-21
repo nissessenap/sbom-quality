@@ -12,16 +12,18 @@
 # The lock is frozen, so component set + hashes are deterministic; only parlay's
 # ecosyste.ms enrichment is live, hence the floor sits below the measured number.
 #
-# Measured post-pipeline (cyclonedx-py 7.3.0, sbomqs 2.0.8): solo ~8.3. The score
-# depends on quality-patch #6 lifting each dep's poetry.lock-pinned SHA-256 out of
-# externalReferences[distribution] into a component-level hash — cyclonedx-py parks
-# it there, where sbomqs' integrity check otherwise can't see it.
+# poetry.lock is platform-independent: cyclonedx-py records one SHA-256 per platform
+# wheel under externalReferences[distribution]. No single one is "the" component
+# digest, so quality-patch deliberately does NOT lift any (that would stamp an
+# arbitrary wheel's hash as the package checksum). Those hashes stay where they are,
+# correctly URL-scoped — so the pypi components carry no component-level hash and the
+# floor reflects that.
 #
 # Requires: uv (for uvx), network to PyPI + ecosyste.ms, parlay, sbom-utility,
 # sbomqs, jq, git. No image => no trivy/sbomasm merge (the Go/Java gates cover that).
 set -euo pipefail
 
-FLOOR="${FLOOR:-7.9}"
+FLOOR="${FLOOR:-6.3}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$REPO_ROOT/scripts/lib.sh"
 WORK="$(mktemp -d)"
@@ -39,12 +41,13 @@ SQ="$WORK/sbom-quality"
 uvx --from cyclonedx-bom cyclonedx-py poetry "$REPO_ROOT/testdata/fixture-python" -o "$WORK/py.bom.json"
 "$SQ" "${SQ_IDENTITY[@]}" --license "$SQ_LICENSE" --sbom "$WORK/py.bom.json" -o "$WORK/py.cdx.json"
 
-# Assert quality-patch #6 actually lifted a poetry.lock SHA-256 onto a pypi
-# component (the integrity signal sbomqs credits) — kept component-agnostic so
+# Assert quality-patch did NOT fabricate a component hash for multi-wheel pypi deps:
+# the per-platform SHA-256s must stay on externalReferences[distribution], never lifted
+# onto the component (see quality_patch.go liftDistributionHashes). Component-agnostic so
 # bumping the fixture's deps doesn't break the gate.
-if ! jq -e '.components[] | select(.purl // "" | startswith("pkg:pypi/")) | .hashes[]? | select(.alg == "SHA-256")' "$WORK/py.cdx.json" >/dev/null; then
-	echo "::error::python SBOM has no SHA-256 on any pypi component — quality-patch checksum lift regressed"
+if jq -e '.components[] | select(.purl // "" | startswith("pkg:pypi/")) | select((.externalReferences[]? | select(.type == "distribution")) and (.hashes | length > 0))' "$WORK/py.cdx.json" >/dev/null; then
+	echo "::error::a multi-wheel pypi component carries a lifted component hash — the arbitrary-wheel fabrication regressed"
 	exit 1
 fi
-echo "OK: quality-patch lifted a poetry.lock SHA-256 onto a pypi component"
+echo "OK: pypi per-wheel SHA-256s left on externalReferences, not fabricated onto components"
 gate python-solo "$FLOOR" "$WORK/py.cdx.json"

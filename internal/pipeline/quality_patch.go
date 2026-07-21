@@ -28,8 +28,8 @@ func qualityPatch(sbom []byte) ([]byte, error) {
 // directly). Five patches, all score-tuning only:
 //  1. every license gets acknowledgement:declared; SPDX expressions are unwrapped to
 //     license.name (CDX 1.6 rejects non-enum ids inside expressions, name is free-form).
-//     Per-component checksums a generator parked on a "distribution" externalReference
-//     (e.g. cyclonedx-npm maps npm `integrity` there) are lifted into component.hashes.
+//     A checksum a generator parked on a lone "distribution" externalReference
+//     (e.g. cyclonedx-npm maps npm `integrity` there) is lifted into component.hashes.
 //  2. compositions declared complete.
 //  3. primary-component SHA-256 checksum lifted from its oci purl when hashes are absent.
 //  4. our own supplier (metadata.supplier) back-filled onto wrapper components lacking one.
@@ -148,24 +148,32 @@ func normalizeComponentLicenses(c *cdx.Component) {
 	}
 }
 
-// liftDistributionHashes surfaces per-component checksums a generator parked on a
-// "distribution" externalReference (cyclonedx-npm maps npm `integrity` there — a SHA-512;
-// cyclonedx-py records a poetry.lock SHA-256) into component.hashes, where sbomqs credits
-// them. Faithful: the same digest, relocated — only when the component carries no hashes
-// of its own, and algorithm-agnostic so npm's SHA-512 lifts as readily as pypi's SHA-256.
-// Uses the first distribution ref only: a resolved dep can list one ref per platform wheel
-// (poetry lists dozens), and one artifact digest is the integrity signal — not all of them.
-// Recurses into nested components, matching normalizeComponentLicenses.
+// liftDistributionHashes surfaces a checksum a generator parked on a "distribution"
+// externalReference (cyclonedx-npm maps npm `integrity` there — a SHA-512) into
+// component.hashes, where sbomqs credits it. Algorithm-agnostic, and only when the
+// component carries no hashes of its own.
+//
+// Lifts ONLY when the component has exactly one distribution ref — then that digest
+// genuinely identifies the component (an npm tarball; a per-platform venv scan). A
+// platform-independent lock enumerates one wheel *per platform* (poetry: dozens of
+// distinct SHA-256s), and no single one is "the" artifact — so we decline rather than
+// stamp an arbitrary wheel's hash as the package checksum, which would fail verification
+// on any other platform. Those hashes stay on the externalReferences, correctly
+// URL-scoped; generate from an installed environment if you want the component-hash
+// credit. Recurses into nested components, matching normalizeComponentLicenses.
 func liftDistributionHashes(c *cdx.Component) {
-	if c.Hashes == nil || len(*c.Hashes) == 0 {
-		if c.ExternalReferences != nil {
-			for _, ref := range *c.ExternalReferences {
-				if ref.Type == cdx.ERTypeDistribution && ref.Hashes != nil && len(*ref.Hashes) > 0 {
-					lifted := append([]cdx.Hash(nil), *ref.Hashes...)
-					c.Hashes = &lifted
-					break
-				}
+	if (c.Hashes == nil || len(*c.Hashes) == 0) && c.ExternalReferences != nil {
+		var lifted *[]cdx.Hash
+		n := 0
+		for _, ref := range *c.ExternalReferences {
+			if ref.Type == cdx.ERTypeDistribution && ref.Hashes != nil && len(*ref.Hashes) > 0 {
+				n++
+				h := append([]cdx.Hash(nil), *ref.Hashes...)
+				lifted = &h
 			}
+		}
+		if n == 1 {
+			c.Hashes = lifted
 		}
 	}
 	if c.Components != nil {
