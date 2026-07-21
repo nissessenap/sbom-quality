@@ -168,20 +168,17 @@ func liftDistributionHashes(c *cdx.Component) {
 	if (c.Hashes == nil || len(*c.Hashes) == 0) && c.ExternalReferences != nil {
 		var lifted []cdx.Hash
 		seen := map[cdx.HashAlgorithm]bool{}
-		repeated := false
 		for _, ref := range *c.ExternalReferences {
 			if ref.Type != cdx.ERTypeDistribution || ref.Hashes == nil {
 				continue
 			}
 			for _, h := range *ref.Hashes {
-				if seen[h.Algorithm] {
-					repeated = true
-				}
 				seen[h.Algorithm] = true
 				lifted = append(lifted, h)
 			}
 		}
-		if len(lifted) > 0 && !repeated {
+		// len(lifted) == len(seen) ⇒ no algorithm repeated ⇒ one artifact; see doc above.
+		if len(lifted) > 0 && len(lifted) == len(seen) {
 			c.Hashes = &lifted
 		}
 	}
