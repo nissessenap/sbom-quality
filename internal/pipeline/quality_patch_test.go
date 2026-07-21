@@ -54,6 +54,90 @@ func TestPatchLicenseAcknowledgementAndUnwrap(t *testing.T) {
 	}
 }
 
+func TestPatchLiftsDistributionHashes(t *testing.T) {
+	const sha = "abc123abc123abc123abc123abc123abc123abc123abc123abc123abc123abcd"
+
+	// npm: the integrity digest (a SHA-512) is parked on a single distribution ref, not
+	// on the component — it must lift, algorithm-agnostic (mine originally filtered SHA-256
+	// and would have missed this).
+	bom := patchBOM()
+	(*bom.Components)[0].ExternalReferences = &[]cdx.ExternalReference{{
+		Type:   cdx.ERTypeDistribution,
+		URL:    "https://registry.npmjs.org/dep/-/dep-1.0.0.tgz",
+		Hashes: &[]cdx.Hash{{Algorithm: cdx.HashAlgoSHA512, Value: sha}},
+	}}
+	applyQualityPatch(bom)
+	if h := (*bom.Components)[0].Hashes; h == nil || len(*h) != 1 || (*h)[0].Algorithm != cdx.HashAlgoSHA512 || (*h)[0].Value != sha {
+		t.Errorf("component hashes = %+v, want single SHA-512 %s lifted from distribution ref", h, sha)
+	}
+
+	// python (poetry): a platform-independent lock lists one distribution ref *per wheel*,
+	// each a SHA-256 for a different platform. The repeated algorithm means many artifacts,
+	// not many algs of one — no single hash is "the" component digest, so lift none.
+	bom = patchBOM()
+	var manyRefs []cdx.ExternalReference
+	for i := range 5 {
+		manyRefs = append(manyRefs, cdx.ExternalReference{
+			Type:   cdx.ERTypeDistribution,
+			URL:    "https://files.pythonhosted.org/wheel-" + string(rune('a'+i)) + ".whl",
+			Hashes: &[]cdx.Hash{{Algorithm: cdx.HashAlgoSHA256, Value: sha}},
+		})
+	}
+	(*bom.Components)[0].ExternalReferences = &manyRefs
+	applyQualityPatch(bom)
+	if h := (*bom.Components)[0].Hashes; h != nil {
+		t.Errorf("component hashes = %+v, want none lifted from %d per-platform SHA-256s", h, len(manyRefs))
+	}
+
+	// python (uv export/requirements): the same per-platform SHA-256s, but packed into ONE
+	// distribution ref instead of many. Same reality — repeated SHA-256 ⇒ lift none. (The
+	// bug the ref-count gate missed: one ref, many artifacts.)
+	bom = patchBOM()
+	(*bom.Components)[0].ExternalReferences = &[]cdx.ExternalReference{{
+		Type:   cdx.ERTypeDistribution,
+		Hashes: &[]cdx.Hash{{Algorithm: cdx.HashAlgoSHA256, Value: sha}, {Algorithm: cdx.HashAlgoSHA256, Value: "other"}},
+	}}
+	applyQualityPatch(bom)
+	if h := (*bom.Components)[0].Hashes; h != nil {
+		t.Errorf("component hashes = %+v, want none lifted from one ref carrying repeated SHA-256", h)
+	}
+
+	// single artifact, multiple algorithms (npm-style tarball with SHA-512 + SHA-1 of the
+	// same file): distinct algorithms ⇒ one artifact ⇒ lift both.
+	bom = patchBOM()
+	(*bom.Components)[0].ExternalReferences = &[]cdx.ExternalReference{
+		{Type: cdx.ERTypeVCS, URL: "https://github.com/x/y"},
+		{Type: cdx.ERTypeDistribution, Hashes: &[]cdx.Hash{
+			{Algorithm: cdx.HashAlgoSHA512, Value: sha}, {Algorithm: cdx.HashAlgoSHA1, Value: "deadbeef"},
+		}},
+	}
+	applyQualityPatch(bom)
+	if h := (*bom.Components)[0].Hashes; h == nil || len(*h) != 2 {
+		t.Errorf("component hashes = %+v, want both distinct-algorithm hashes lifted", h)
+	}
+
+	// a component that already has hashes is left untouched.
+	bom = patchBOM()
+	(*bom.Components)[0].Hashes = &[]cdx.Hash{{Algorithm: cdx.HashAlgoSHA256, Value: sha}}
+	(*bom.Components)[0].ExternalReferences = &[]cdx.ExternalReference{{
+		Type: cdx.ERTypeDistribution, Hashes: &[]cdx.Hash{{Algorithm: cdx.HashAlgoSHA512, Value: "other"}},
+	}}
+	applyQualityPatch(bom)
+	if h := (*bom.Components)[0].Hashes; h == nil || len(*h) != 1 || (*h)[0].Algorithm != cdx.HashAlgoSHA256 {
+		t.Errorf("existing hashes overwritten: %+v", h)
+	}
+
+	// a non-distribution ref (e.g. vcs) with hashes is ignored.
+	bom = patchBOM()
+	(*bom.Components)[0].ExternalReferences = &[]cdx.ExternalReference{{
+		Type: cdx.ERTypeVCS, Hashes: &[]cdx.Hash{{Algorithm: cdx.HashAlgoSHA512, Value: sha}},
+	}}
+	applyQualityPatch(bom)
+	if (*bom.Components)[0].Hashes != nil {
+		t.Errorf("hashes lifted from a non-distribution ref: %+v", (*bom.Components)[0].Hashes)
+	}
+}
+
 func TestPatchCompositionsComplete(t *testing.T) {
 	bom := patchBOM()
 	applyQualityPatch(bom)
@@ -135,46 +219,6 @@ func TestPatchPrimaryChecksumFromPurl(t *testing.T) {
 	applyQualityPatch(bom)
 	if bom.Metadata.Component.Hashes != nil {
 		t.Errorf("hashes = %+v, want none for a digest-less purl", bom.Metadata.Component.Hashes)
-	}
-}
-
-func TestPatchLiftsDistributionHashes(t *testing.T) {
-	const sha = "abc123abc123abc123abc123abc123abc123abc123abc123abc123abc123abcd"
-	bom := patchBOM()
-	// cyclonedx-npm parks the integrity hash on a distribution externalReference, not
-	// on the component. The dep component has no hashes of its own.
-	(*bom.Components)[0].ExternalReferences = &[]cdx.ExternalReference{{
-		Type:   cdx.ERTypeDistribution,
-		URL:    "https://registry.npmjs.org/dep/-/dep-1.0.0.tgz",
-		Hashes: &[]cdx.Hash{{Algorithm: cdx.HashAlgoSHA512, Value: sha}},
-	}}
-	applyQualityPatch(bom)
-
-	h := (*bom.Components)[0].Hashes
-	if h == nil || len(*h) != 1 || (*h)[0].Algorithm != cdx.HashAlgoSHA512 || (*h)[0].Value != sha {
-		t.Errorf("component hashes = %+v, want single SHA-512 %s lifted from distribution ref", h, sha)
-	}
-
-	// a component that already has hashes is left untouched.
-	bom = patchBOM()
-	orig := &[]cdx.Hash{{Algorithm: cdx.HashAlgoSHA256, Value: sha}}
-	(*bom.Components)[0].Hashes = orig
-	(*bom.Components)[0].ExternalReferences = &[]cdx.ExternalReference{{
-		Type: cdx.ERTypeDistribution, Hashes: &[]cdx.Hash{{Algorithm: cdx.HashAlgoSHA512, Value: "other"}},
-	}}
-	applyQualityPatch(bom)
-	if h := (*bom.Components)[0].Hashes; h == nil || len(*h) != 1 || (*h)[0].Algorithm != cdx.HashAlgoSHA256 {
-		t.Errorf("existing hashes overwritten: %+v", h)
-	}
-
-	// a non-distribution ref (e.g. vcs) with hashes is ignored.
-	bom = patchBOM()
-	(*bom.Components)[0].ExternalReferences = &[]cdx.ExternalReference{{
-		Type: cdx.ERTypeVCS, Hashes: &[]cdx.Hash{{Algorithm: cdx.HashAlgoSHA512, Value: sha}},
-	}}
-	applyQualityPatch(bom)
-	if (*bom.Components)[0].Hashes != nil {
-		t.Errorf("hashes lifted from a non-distribution ref: %+v", (*bom.Components)[0].Hashes)
 	}
 }
 

@@ -1,0 +1,47 @@
+name: sbomqs gate (python)
+
+# Python golden gate: generate a dependency SBOM from the poetry fixture via
+# cyclonedx-python, run the full --sbom pipeline, and fail if the sbomqs score
+# regresses below the floor in scripts/sbomqs-gate-python.sh or sbom-utility
+# rejects 1.6 conformance. Independent of the Go/Java gates — solo only (no image),
+# so it needs neither trivy/sbomasm nor a JDK.
+on:
+  pull_request:
+    # Docs-only PRs can't change the produced SBOM; skip the gate.
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  sbomqs-gate-python:
+    runs-on: ubuntu-latest
+    env:
+      PARLAY_VERSION: v0.11.0
+      SBOM_UTILITY_VERSION: v0.19.2
+      SBOMQS_VERSION: v2.0.8
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      # uvx runs cyclonedx-py without a persistent install.
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Install SBOM tools
+        run: |
+          go install "github.com/snyk/parlay@${PARLAY_VERSION}"
+          go install "github.com/CycloneDX/sbom-utility@${SBOM_UTILITY_VERSION}"
+          go install "github.com/interlynk-io/sbomqs/v2@${SBOMQS_VERSION}"
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: sbomqs gate (python, scored)
+        run: ./scripts/sbomqs-gate-python.sh

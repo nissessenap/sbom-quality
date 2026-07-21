@@ -15,10 +15,10 @@ The locked MVP spec lives in **GitHub issue #15** — read it before non-trivial
 | merge | sbomasm | one 1.6 doc from `--image` + `--go-mod` |
 | enrich | parlay | supplier / license / VCS for Go and Maven components |
 | augment | **native** | document-identity metadata: supplier, authors, lifecycle, data-license |
-| quality-patch | **native** | score-tuning: declared acknowledgements, compositions, supplier/license back-fill, primary SHA-256 |
+| quality-patch | **native** | score-tuning: declared acknowledgements, compositions, supplier/license back-fill, primary SHA-256, distribution-checksum lift |
 | validate | sbom-utility | fail-loud CycloneDX 1.6 conformance; demotes a license.id the validator's SPDX list is too old to know (e.g. trivy's `Artistic-dist`) to a free-form name, then re-validates |
 
-Native stages assert only faithful *declared* data — never `acknowledgement:concluded` (see #15, #30). Per-flag docs live in `--help`; score floors live in `./scripts/sbomqs-gate.sh` (Go), `./scripts/sbomqs-gate-java.sh` (Java, via `--sbom`), `./scripts/sbomqs-gate-npm.sh` (npm, via `--sbom`) and `./scripts/sbomqs-gate-rust.sh` (Rust, via `--sbom`); Java usage in `docs/java.md`, npm in `docs/npm.md`, Rust in `docs/rust.md`.
+Native stages assert only faithful *declared* data — never `acknowledgement:concluded` (see #15, #30). Per-flag docs live in `--help`; score floors live in `./scripts/sbomqs-gate.sh` (Go), `./scripts/sbomqs-gate-java.sh` (Java, via `--sbom`), `./scripts/sbomqs-gate-npm.sh` (npm, via `--sbom`), `./scripts/sbomqs-gate-rust.sh` (Rust, via `--sbom`) and `./scripts/sbomqs-gate-python.sh` (Python, via `--sbom`); Java usage in `docs/java.md`, npm in `docs/npm.md`, Rust in `docs/rust.md`, Python in `docs/python.md`.
 
 ## Layout
 

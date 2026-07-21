@@ -28,8 +28,8 @@ func qualityPatch(sbom []byte) ([]byte, error) {
 // directly). Five patches, all score-tuning only:
 //  1. every license gets acknowledgement:declared; SPDX expressions are unwrapped to
 //     license.name (CDX 1.6 rejects non-enum ids inside expressions, name is free-form).
-//     Per-component checksums a generator parked on a "distribution" externalReference
-//     (e.g. cyclonedx-npm maps npm `integrity` there) are lifted into component.hashes.
+//     A checksum a generator parked on a lone "distribution" externalReference
+//     (e.g. cyclonedx-npm maps npm `integrity` there) is lifted into component.hashes.
 //  2. compositions declared complete.
 //  3. primary-component SHA-256 checksum lifted from its oci purl when hashes are absent.
 //  4. our own supplier (metadata.supplier) back-filled onto wrapper components lacking one.
@@ -148,20 +148,37 @@ func normalizeComponentLicenses(c *cdx.Component) {
 	}
 }
 
-// liftDistributionHashes surfaces per-component checksums a generator parked on a
-// "distribution" externalReference (cyclonedx-npm maps npm `integrity` there, not onto
-// the component) into component.hashes, where sbomqs credits them. Faithful: the same
-// digest, relocated — only when the component carries no hashes of its own. Recurses
-// into nested components, matching normalizeComponentLicenses.
+// liftDistributionHashes surfaces a checksum a generator parked on a "distribution"
+// externalReference (cyclonedx-npm maps npm `integrity` there — a SHA-512) into
+// component.hashes, where sbomqs credits it. Algorithm-agnostic, and only when the
+// component carries no hashes of its own.
+//
+// component.hashes means "hashes of THE component": multiple entries are different
+// *algorithms* of one artifact, never different artifacts. So we gather every hash on
+// the component's distribution refs and lift them ONLY when no algorithm repeats —
+// i.e. they describe a single artifact (an npm tarball, possibly SHA-512 + SHA-1 of the
+// same file). A repeated algorithm means the component resolves to many artifacts: a
+// platform-independent lock lists one wheel per platform (poetry spreads dozens of
+// SHA-256s across dozens of refs; `uv export`/requirements packs them into one ref with
+// dozens of SHA-256s) — same reality either way, and no single hash identifies the
+// component. We decline rather than fabricate a checksum that fails verification on
+// every other platform; those hashes stay on the externalReferences, correctly
+// URL-scoped. Recurses into nested components, matching normalizeComponentLicenses.
 func liftDistributionHashes(c *cdx.Component) {
 	if (c.Hashes == nil || len(*c.Hashes) == 0) && c.ExternalReferences != nil {
 		var lifted []cdx.Hash
+		seen := map[cdx.HashAlgorithm]bool{}
 		for _, ref := range *c.ExternalReferences {
-			if ref.Type == cdx.ERTypeDistribution && ref.Hashes != nil {
-				lifted = append(lifted, *ref.Hashes...)
+			if ref.Type != cdx.ERTypeDistribution || ref.Hashes == nil {
+				continue
+			}
+			for _, h := range *ref.Hashes {
+				seen[h.Algorithm] = true
+				lifted = append(lifted, h)
 			}
 		}
-		if len(lifted) > 0 {
+		// len(lifted) == len(seen) ⇒ no algorithm repeated ⇒ one artifact; see doc above.
+		if len(lifted) > 0 && len(lifted) == len(seen) {
 			c.Hashes = &lifted
 		}
 	}

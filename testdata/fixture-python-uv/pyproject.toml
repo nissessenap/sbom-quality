@@ -1,0 +1,16 @@
+[project]
+name = "sbom-quality-fixture-python-uv"
+version = "0.1.0"
+description = "Throwaway fixture for the uv path of the Python BYO --sbom golden gate"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+dependencies = [
+    "requests",
+    "click",
+    "jinja2",
+    "rich",
+    "pyyaml",
+]
+
+[tool.uv]
+package = false
