@@ -6,7 +6,8 @@
 # needs only cyclonedx-py (run via uvx), never cyclonedx-gomod/ko/a JDK.
 #
 # Gates:
-#   python-solo   --sbom (cyclonedx-py poetry, native 1.6)   FLOOR
+#   python-solo   --sbom (cyclonedx-py poetry, native 1.6)    FLOOR
+#   python-uv     --sbom (uv export cyclonedx1.5, up-converted) UV_FLOOR
 #
 # cyclonedx-py reads the committed poetry.lock directly (no poetry binary needed).
 # The lock is frozen, so component set + hashes are deterministic; only parlay's
@@ -24,6 +25,7 @@
 set -euo pipefail
 
 FLOOR="${FLOOR:-6.3}"
+UV_FLOOR="${UV_FLOOR:-6.3}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$REPO_ROOT/scripts/lib.sh"
 WORK="$(mktemp -d)"
@@ -51,3 +53,15 @@ if jq -e '.components[] | select(.purl // "" | startswith("pkg:pypi/")) | select
 fi
 echo "OK: pypi per-wheel SHA-256s left on externalReferences, not fabricated onto components"
 gate python-solo "$FLOOR" "$WORK/py.cdx.json"
+
+# uv path: uv exports CycloneDX 1.5 natively (no cyclonedx-py) from the committed,
+# frozen uv.lock; the pipeline accepts >=1.5 and up-converts to 1.6. The differentiator
+# vs the requirements hop is that uv keeps a primary component — assert it survives.
+uv export --project "$REPO_ROOT/testdata/fixture-python-uv" --format cyclonedx1.5 -o "$WORK/uv.bom.json"
+"$SQ" "${SQ_IDENTITY[@]}" --license "$SQ_LICENSE" --sbom "$WORK/uv.bom.json" -o "$WORK/uv.cdx.json"
+if ! jq -e '.metadata.component.name' "$WORK/uv.cdx.json" >/dev/null; then
+	echo "::error::uv SBOM lost its primary component through the pipeline"
+	exit 1
+fi
+echo "OK: uv native 1.5 up-converted to 1.6 with its primary component intact"
+gate python-uv "$UV_FLOOR" "$WORK/uv.cdx.json"
