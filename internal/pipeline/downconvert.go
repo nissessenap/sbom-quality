@@ -66,5 +66,5 @@ func acquireSBOM(path string, warn io.Writer) ([]byte, error) {
 	if bom.SpecVersion > cdx.SpecVersion1_6 {
 		fmt.Fprintf(warn, "sbom-quality: warning: --sbom %s is CycloneDX %s; down-converting to 1.6\n", path, bom.SpecVersion)
 	}
-	return reencode16(raw, nil)
+	return encode16(&bom)
 }
