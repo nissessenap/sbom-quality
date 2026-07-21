@@ -1,0 +1,11 @@
+[package]
+name = "fixture-cargo"
+version = "1.0.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+description = "Throwaway cargo fixture for the --sbom golden gate: a few real crates with transitives; serde/anyhow carry MIT OR Apache-2.0 SPDX expressions."
+
+[dependencies]
+anyhow = "1.0.86"
+serde = { version = "1.0.203", features = ["derive"] }
