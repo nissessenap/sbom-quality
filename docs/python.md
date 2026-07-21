@@ -41,18 +41,16 @@ GitHub Actions:
 
 `poetry.lock` pins per-artifact SHA-256 hashes, but cyclonedx-py records them under
 `externalReferences[type=distribution]`, **not** `component.hashes` — where sbomqs'
-integrity check can't see them. The pipeline **does not** lift these onto the
-components: a lock is platform-independent, so it lists one wheel (one distinct
-SHA-256) *per platform*, and no single one is the package's checksum. Stamping an
-arbitrary wheel's hash onto the component would advertise a digest that fails
-verification on every other platform — so the hashes stay on the distribution refs,
-correctly URL-scoped, and sbomqs' integrity check goes uncredited (≈ 1.6 points).
-
-If you want that credit *faithfully*, generate a **per-platform** SBOM where each
-component resolves to a single artifact — `cyclonedx-py environment` (scans an
-installed venv) or an npm-style single-tarball generator. The quality-patch lifts a
-component hash only when there is exactly one distribution ref, which is precisely
-those cases.
+integrity check can't see them. **The pipeline does not lift them onto the
+components**, and no Python lock earns the integrity credit, because a lock is
+platform-independent: it lists one wheel per platform (dozens of distinct SHA-256s).
+`component.hashes` means "hashes of *the* component" — one artifact, so multiple
+entries can only be different algorithms of that one file, never dozens of different
+wheels. Stamping an arbitrary wheel's hash there would advertise a digest that fails
+verification on every other platform, so the pipeline leaves them on the distribution
+refs, correctly URL-scoped. (The lift fires only for genuinely single-artifact
+ecosystems — an npm tarball — where the distribution ref's hashes share no repeated
+algorithm.)
 
 ## pip / requirements — `cyclonedx-py requirements`
 
@@ -64,17 +62,32 @@ cyclonedx-py requirements requirements.txt -o bom.json
 ```
 
 Trade-off vs `poetry` mode: a bare requirements file has no project, so the SBOM
-carries **no primary component** (≈ −0.6 post-pipeline). Prefer `poetry` (or scan an
-installed venv with `cyclonedx-py environment`, which reads a project's metadata)
-where a primary-component identity matters.
+carries **no primary component** (≈ −0.6 post-pipeline). Prefer `poetry` where a
+primary-component identity matters.
 
-## uv.lock gap
+## uv — export to requirements (recommended for uv projects)
 
-`uv.lock` has **no native parser** in cyclonedx-py or cdxgen yet. `uv export --format
-cyclonedx1.5` emits **1.5**, which the pipeline's `<1.6` guard rejects. Until a native
-1.6 `uv.lock` path lands, uv projects should either export a hash-pinned
-`requirements.txt` (`uv export --format requirements-txt --hashes`) and use the
-requirements path above, or scan the installed venv with `cyclonedx-py environment`.
+`uv.lock` has **no native parser** in cyclonedx-py or cdxgen yet, and `uv export
+--format cyclonedx1.5` emits **1.5**, which the pipeline's `<1.6` guard rejects. Until
+a native 1.6 `uv.lock` path lands, export a hash-pinned `requirements.txt` and feed it
+through the requirements generator above:
+
+```sh
+uv export --format requirements-txt --no-emit-project --hashes -o requirements.txt
+cyclonedx-py requirements requirements.txt -o bom.json      # native CycloneDX 1.6
+
+sbom-quality --sbom bom.json --supplier-name "ACME" > sbom.cdx.json
+```
+
+Measured post-pipeline sbomqs (uv 0.9, cyclonedx-py 7.3.0): solo `--sbom` ≈ **6.1** —
+about 0.6 below `poetry` mode's ≈ 6.7, entirely because a requirements set has **no
+primary component**. Same as poetry, the per-platform hashes stay on the distribution
+refs (see [Where the hashes go](#where-the-hashes-go)); neither path earns the
+integrity credit.
+
+`cyclonedx-py environment .venv` (after `uv sync`) also works but scores lower (≈ 5.8):
+installed dist-info records no artifact hashes and still yields no primary component.
+Prefer the requirements export.
 
 ## cdxgen fallback (polyglot / non-poetry builds)
 

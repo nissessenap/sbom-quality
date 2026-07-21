@@ -153,27 +153,36 @@ func normalizeComponentLicenses(c *cdx.Component) {
 // component.hashes, where sbomqs credits it. Algorithm-agnostic, and only when the
 // component carries no hashes of its own.
 //
-// Lifts ONLY when the component has exactly one distribution ref — then that digest
-// genuinely identifies the component (an npm tarball; a per-platform venv scan). A
-// platform-independent lock enumerates one wheel *per platform* (poetry: dozens of
-// distinct SHA-256s), and no single one is "the" artifact — so we decline rather than
-// stamp an arbitrary wheel's hash as the package checksum, which would fail verification
-// on any other platform. Those hashes stay on the externalReferences, correctly
-// URL-scoped; generate from an installed environment if you want the component-hash
-// credit. Recurses into nested components, matching normalizeComponentLicenses.
+// component.hashes means "hashes of THE component": multiple entries are different
+// *algorithms* of one artifact, never different artifacts. So we gather every hash on
+// the component's distribution refs and lift them ONLY when no algorithm repeats —
+// i.e. they describe a single artifact (an npm tarball, possibly SHA-512 + SHA-1 of the
+// same file). A repeated algorithm means the component resolves to many artifacts: a
+// platform-independent lock lists one wheel per platform (poetry spreads dozens of
+// SHA-256s across dozens of refs; `uv export`/requirements packs them into one ref with
+// dozens of SHA-256s) — same reality either way, and no single hash identifies the
+// component. We decline rather than fabricate a checksum that fails verification on
+// every other platform; those hashes stay on the externalReferences, correctly
+// URL-scoped. Recurses into nested components, matching normalizeComponentLicenses.
 func liftDistributionHashes(c *cdx.Component) {
 	if (c.Hashes == nil || len(*c.Hashes) == 0) && c.ExternalReferences != nil {
-		var lifted *[]cdx.Hash
-		n := 0
+		var lifted []cdx.Hash
+		seen := map[cdx.HashAlgorithm]bool{}
+		repeated := false
 		for _, ref := range *c.ExternalReferences {
-			if ref.Type == cdx.ERTypeDistribution && ref.Hashes != nil && len(*ref.Hashes) > 0 {
-				n++
-				h := append([]cdx.Hash(nil), *ref.Hashes...)
-				lifted = &h
+			if ref.Type != cdx.ERTypeDistribution || ref.Hashes == nil {
+				continue
+			}
+			for _, h := range *ref.Hashes {
+				if seen[h.Algorithm] {
+					repeated = true
+				}
+				seen[h.Algorithm] = true
+				lifted = append(lifted, h)
 			}
 		}
-		if n == 1 {
-			c.Hashes = lifted
+		if len(lifted) > 0 && !repeated {
+			c.Hashes = &lifted
 		}
 	}
 	if c.Components != nil {

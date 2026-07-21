@@ -72,9 +72,8 @@ func TestPatchLiftsDistributionHashes(t *testing.T) {
 	}
 
 	// python (poetry): a platform-independent lock lists one distribution ref *per wheel*,
-	// each a distinct SHA-256 for a different platform. No single one is "the" component
-	// digest, so we must NOT lift any — stamping one arbitrary wheel's hash would fail
-	// verification on every other platform.
+	// each a SHA-256 for a different platform. The repeated algorithm means many artifacts,
+	// not many algs of one — no single hash is "the" component digest, so lift none.
 	bom = patchBOM()
 	var manyRefs []cdx.ExternalReference
 	for i := range 5 {
@@ -87,18 +86,34 @@ func TestPatchLiftsDistributionHashes(t *testing.T) {
 	(*bom.Components)[0].ExternalReferences = &manyRefs
 	applyQualityPatch(bom)
 	if h := (*bom.Components)[0].Hashes; h != nil {
-		t.Errorf("component hashes = %+v, want none lifted from %d ambiguous distribution refs", h, len(manyRefs))
+		t.Errorf("component hashes = %+v, want none lifted from %d per-platform SHA-256s", h, len(manyRefs))
 	}
 
-	// mixed refs: exactly one distribution (+ a vcs ref) is unambiguous — lift it.
+	// python (uv export/requirements): the same per-platform SHA-256s, but packed into ONE
+	// distribution ref instead of many. Same reality — repeated SHA-256 ⇒ lift none. (The
+	// bug the ref-count gate missed: one ref, many artifacts.)
+	bom = patchBOM()
+	(*bom.Components)[0].ExternalReferences = &[]cdx.ExternalReference{{
+		Type:   cdx.ERTypeDistribution,
+		Hashes: &[]cdx.Hash{{Algorithm: cdx.HashAlgoSHA256, Value: sha}, {Algorithm: cdx.HashAlgoSHA256, Value: "other"}},
+	}}
+	applyQualityPatch(bom)
+	if h := (*bom.Components)[0].Hashes; h != nil {
+		t.Errorf("component hashes = %+v, want none lifted from one ref carrying repeated SHA-256", h)
+	}
+
+	// single artifact, multiple algorithms (npm-style tarball with SHA-512 + SHA-1 of the
+	// same file): distinct algorithms ⇒ one artifact ⇒ lift both.
 	bom = patchBOM()
 	(*bom.Components)[0].ExternalReferences = &[]cdx.ExternalReference{
 		{Type: cdx.ERTypeVCS, URL: "https://github.com/x/y"},
-		{Type: cdx.ERTypeDistribution, Hashes: &[]cdx.Hash{{Algorithm: cdx.HashAlgoSHA256, Value: sha}}},
+		{Type: cdx.ERTypeDistribution, Hashes: &[]cdx.Hash{
+			{Algorithm: cdx.HashAlgoSHA512, Value: sha}, {Algorithm: cdx.HashAlgoSHA1, Value: "deadbeef"},
+		}},
 	}
 	applyQualityPatch(bom)
-	if h := (*bom.Components)[0].Hashes; h == nil || len(*h) != 1 || (*h)[0].Value != sha {
-		t.Errorf("component hashes = %+v, want the lone distribution ref's hash lifted", h)
+	if h := (*bom.Components)[0].Hashes; h == nil || len(*h) != 2 {
+		t.Errorf("component hashes = %+v, want both distinct-algorithm hashes lifted", h)
 	}
 
 	// a component that already has hashes is left untouched.
