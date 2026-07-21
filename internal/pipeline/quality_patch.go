@@ -149,20 +149,23 @@ func normalizeComponentLicenses(c *cdx.Component) {
 }
 
 // liftDistributionHashes surfaces per-component checksums a generator parked on a
-// "distribution" externalReference (cyclonedx-npm maps npm `integrity` there, not onto
-// the component) into component.hashes, where sbomqs credits them. Faithful: the same
-// digest, relocated — only when the component carries no hashes of its own. Recurses
-// into nested components, matching normalizeComponentLicenses.
+// "distribution" externalReference (cyclonedx-npm maps npm `integrity` there — a SHA-512;
+// cyclonedx-py records a poetry.lock SHA-256) into component.hashes, where sbomqs credits
+// them. Faithful: the same digest, relocated — only when the component carries no hashes
+// of its own, and algorithm-agnostic so npm's SHA-512 lifts as readily as pypi's SHA-256.
+// Uses the first distribution ref only: a resolved dep can list one ref per platform wheel
+// (poetry lists dozens), and one artifact digest is the integrity signal — not all of them.
+// Recurses into nested components, matching normalizeComponentLicenses.
 func liftDistributionHashes(c *cdx.Component) {
-	if (c.Hashes == nil || len(*c.Hashes) == 0) && c.ExternalReferences != nil {
-		var lifted []cdx.Hash
-		for _, ref := range *c.ExternalReferences {
-			if ref.Type == cdx.ERTypeDistribution && ref.Hashes != nil {
-				lifted = append(lifted, *ref.Hashes...)
+	if c.Hashes == nil || len(*c.Hashes) == 0 {
+		if c.ExternalReferences != nil {
+			for _, ref := range *c.ExternalReferences {
+				if ref.Type == cdx.ERTypeDistribution && ref.Hashes != nil && len(*ref.Hashes) > 0 {
+					lifted := append([]cdx.Hash(nil), *ref.Hashes...)
+					c.Hashes = &lifted
+					break
+				}
 			}
-		}
-		if len(lifted) > 0 {
-			c.Hashes = &lifted
 		}
 	}
 	if c.Components != nil {
