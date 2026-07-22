@@ -44,15 +44,19 @@ uvx --from cyclonedx-bom cyclonedx-py poetry "$REPO_ROOT/testdata/fixture-python
 "$SQ" "${SQ_IDENTITY[@]}" --license "$SQ_LICENSE" --sbom "$WORK/py.bom.json" -o "$WORK/py.cdx.json"
 
 # Assert quality-patch lifted the CANONICAL artifact's hash for multi-wheel pypi deps:
-# at least one pypi component must now carry a component hash, and every lifted pypi hash
-# must match a distribution ref whose URL is the universal wheel (…py3-none-any.whl) or
-# sdist (….tar.gz) — never an arbitrary platform wheel. Component-agnostic so bumping the
-# fixture's deps doesn't break the gate. (see quality_patch.go liftDistributionHashes.)
+# at least one pypi component must now carry a component hash, and for every pypi
+# component that took the canonical-fallback path (i.e. had MORE THAN ONE distribution
+# ref — the fast path only fires on a single-artifact ref set) every lifted hash must
+# match a distribution ref whose URL is the universal wheel (…py3-none-any.whl) or sdist
+# (….tar.gz) — never an arbitrary platform wheel. That invariant is component-agnostic
+# for multi-ref pypi deps, so bumping the fixture's deps doesn't break the gate. (see
+# quality_patch.go liftDistributionHashes.)
 if ! jq -e '[.components[] | select(.purl // "" | startswith("pkg:pypi/")) | select(.hashes // [] | length > 0)] | length > 0' "$WORK/py.cdx.json" >/dev/null; then
 	echo "::error::no pypi component carries a lifted component hash — the canonical-artifact lift regressed"
 	exit 1
 fi
 if jq -e '.components[] | select(.purl // "" | startswith("pkg:pypi/")) | select(.hashes // [] | length > 0)
+  | select([.externalReferences[]? | select(.type == "distribution")] | length > 1)
   | . as $c
   | [$c.externalReferences[]? | select(.type == "distribution" and ((.url // "" | endswith("py3-none-any.whl")) or (.url // "" | endswith(".tar.gz")))) | .hashes[]?.content] as $canon
   | select(any($c.hashes[].content; . as $h | ($canon | index($h)) | not))' "$WORK/py.cdx.json" >/dev/null; then

@@ -75,6 +75,7 @@ func TestPatchLiftsDistributionHashes(t *testing.T) {
 	// The repeated algorithm means many artifacts and none is platform-independent, so
 	// there's no faithful "the component" hash — lift none.
 	bom = patchBOM()
+	(*bom.Components)[0].PackageURL = "pkg:pypi/dep@1.0.0"
 	var manyRefs []cdx.ExternalReference
 	for i := range 5 {
 		manyRefs = append(manyRefs, cdx.ExternalReference{
@@ -95,6 +96,7 @@ func TestPatchLiftsDistributionHashes(t *testing.T) {
 	const uni = "1111111111111111111111111111111111111111111111111111111111111111"
 	const sdist = "2222222222222222222222222222222222222222222222222222222222222222"
 	bom = patchBOM()
+	(*bom.Components)[0].PackageURL = "pkg:pypi/dep@1.0.0"
 	refs := append([]cdx.ExternalReference{}, manyRefs...)
 	refs = append(refs,
 		cdx.ExternalReference{Type: cdx.ERTypeDistribution, URL: "https://files.pythonhosted.org/pkg-1.0-py3-none-any.whl",
@@ -110,6 +112,7 @@ func TestPatchLiftsDistributionHashes(t *testing.T) {
 
 	// python (poetry), case (b): platform wheels + sdist, no universal wheel. Lift the sdist.
 	bom = patchBOM()
+	(*bom.Components)[0].PackageURL = "pkg:pypi/dep@1.0.0"
 	refs = append([]cdx.ExternalReference{}, manyRefs...)
 	refs = append(refs, cdx.ExternalReference{Type: cdx.ERTypeDistribution, URL: "https://files.pythonhosted.org/pkg-1.0.tar.gz",
 		Hashes: &[]cdx.Hash{{Algorithm: cdx.HashAlgoSHA256, Value: sdist}}})
@@ -119,9 +122,25 @@ func TestPatchLiftsDistributionHashes(t *testing.T) {
 		t.Errorf("component hashes = %+v, want single sdist SHA-256 %s", h, sdist)
 	}
 
-	// python (uv export): the per-platform SHA-256s packed into ONE URL-less distribution
-	// ref. Repeated algorithm ⇒ fast path declines; no ref URL identifies a universal
-	// wheel/sdist ⇒ fallback lifts nothing either.
+	// non-pypi purl: repeated-algorithm distribution refs where one URL ends in .tar.gz
+	// (e.g. a goreleaser per-platform release tarball) must NOT trigger the pypi-only
+	// canonical fallback — that would fabricate a hash for the wrong ecosystem.
+	bom = patchBOM()
+	(*bom.Components)[0].PackageURL = "pkg:golang/example.com/foo@v1"
+	goreleaserRefs := append([]cdx.ExternalReference{}, manyRefs...)
+	goreleaserRefs = append(goreleaserRefs, cdx.ExternalReference{
+		Type: cdx.ERTypeDistribution, URL: "https://github.com/x/y/releases/download/v1/foo_linux_amd64.tar.gz",
+		Hashes: &[]cdx.Hash{{Algorithm: cdx.HashAlgoSHA256, Value: sdist}},
+	})
+	(*bom.Components)[0].ExternalReferences = &goreleaserRefs
+	applyQualityPatch(bom)
+	if h := (*bom.Components)[0].Hashes; h != nil {
+		t.Errorf("component hashes = %+v, want none lifted via fallback for a non-pypi purl", h)
+	}
+
+	// generic defensive case: a URL-less distribution ref carrying a repeated SHA-256.
+	// Repeated algorithm ⇒ fast path declines; no ref URL identifies a universal
+	// wheel/sdist ⇒ fallback finds no canonical URL and lifts nothing either.
 	bom = patchBOM()
 	(*bom.Components)[0].ExternalReferences = &[]cdx.ExternalReference{{
 		Type:   cdx.ERTypeDistribution,

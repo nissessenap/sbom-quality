@@ -183,9 +183,9 @@ func liftDistributionHashes(c *cdx.Component) {
 		case len(lifted) > 0 && len(lifted) == len(seen):
 			// no algorithm repeated ⇒ one artifact (npm tarball, maybe SHA-512 + SHA-1).
 			c.Hashes = &lifted
-		case len(lifted) > 0:
-			// many artifacts (per-platform pypi wheels) ⇒ lift the one canonical
-			// platform-independent artifact's hashes, selected by URL, or nothing.
+		case len(lifted) > 0 && strings.HasPrefix(c.PackageURL, "pkg:pypi/"):
+			// pypi-only: many artifacts (per-platform pypi wheels) ⇒ lift the one
+			// canonical platform-independent artifact's hashes, selected by URL, or nothing.
 			if canon := canonicalPyPIDistHashes(c.ExternalReferences); canon != nil {
 				c.Hashes = canon
 			}
@@ -211,11 +211,10 @@ func canonicalPyPIDistHashes(refs *[]cdx.ExternalReference) *[]cdx.Hash {
 		}
 		switch {
 		case strings.HasSuffix(ref.URL, "py3-none-any.whl"): // matches py2.py3- too
-			h := *ref.Hashes
-			return &h
+			return ref.Hashes
+		// ponytail: .zip sdists (old format) not matched, see #73
 		case sdist == nil && strings.HasSuffix(ref.URL, ".tar.gz"):
-			h := *ref.Hashes
-			sdist = &h
+			sdist = ref.Hashes
 		}
 	}
 	return sdist
