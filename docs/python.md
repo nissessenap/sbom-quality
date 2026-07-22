@@ -41,16 +41,17 @@ GitHub Actions:
 
 `poetry.lock` pins per-artifact SHA-256 hashes, but cyclonedx-py records them under
 `externalReferences[type=distribution]`, **not** `component.hashes` — where sbomqs'
-integrity check can't see them. **The pipeline does not lift them onto the
-components**, and no Python lock earns the integrity credit, because a lock is
-platform-independent: it lists one wheel per platform (dozens of distinct SHA-256s).
-`component.hashes` means "hashes of *the* component" — one artifact, so multiple
-entries can only be different algorithms of that one file, never dozens of different
-wheels. Stamping an arbitrary wheel's hash there would advertise a digest that fails
-verification on every other platform, so the pipeline leaves them on the distribution
-refs, correctly URL-scoped. (The lift fires only for genuinely single-artifact
-ecosystems — an npm tarball — where the distribution ref's hashes share no repeated
-algorithm.)
+integrity check can't see them. A lock is platform-independent: it lists one wheel per
+platform (dozens of distinct SHA-256s), and `component.hashes` means "hashes of *the*
+component" — one artifact — so stamping an arbitrary platform wheel's hash there would
+advertise a digest that fails verification on every other platform. Instead the
+pipeline lifts the one **platform-independent** artifact's hash: the universal wheel
+(`…py3-none-any.whl`, else `…py2.py3-none-any.whl`), or failing that the sdist
+(`….tar.gz`). That hash verifies on every platform, so the lift is faithful, and it
+recovers the heavily-weighted integrity credit. A platform-wheels-only release has no
+such artifact, so it keeps `hashes: null` — the honest choice. (For genuinely
+single-artifact ecosystems — an npm tarball — the fast path lifts directly, since the
+distribution ref's hashes share no repeated algorithm.)
 
 ## pip / requirements — `cyclonedx-py requirements`
 

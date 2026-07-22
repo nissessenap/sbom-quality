@@ -14,17 +14,17 @@
 # ecosyste.ms enrichment is live, hence the floor sits below the measured number.
 #
 # poetry.lock is platform-independent: cyclonedx-py records one SHA-256 per platform
-# wheel under externalReferences[distribution]. No single one is "the" component
-# digest, so quality-patch deliberately does NOT lift any (that would stamp an
-# arbitrary wheel's hash as the package checksum). Those hashes stay where they are,
-# correctly URL-scoped — so the pypi components carry no component-level hash and the
-# floor reflects that.
+# wheel under externalReferences[distribution]. quality-patch lifts the one canonical
+# platform-independent artifact's hash (the universal py3-none-any wheel, else the
+# sdist) onto the component — faithful, since it verifies on every platform — and never
+# an arbitrary platform wheel. That recovers the heavily-weighted Integrity category, so
+# the floor is ratcheted up accordingly.
 #
 # Requires: uv (for uvx), network to PyPI + ecosyste.ms, parlay, sbom-utility,
 # sbomqs, jq, git. No image => no trivy/sbomasm merge (the Go/Java gates cover that).
 set -euo pipefail
 
-FLOOR="${FLOOR:-6.3}"
+FLOOR="${FLOOR:-8.0}"
 UV_FLOOR="${UV_FLOOR:-6.3}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$REPO_ROOT/scripts/lib.sh"
@@ -43,15 +43,27 @@ SQ="$WORK/sbom-quality"
 uvx --from cyclonedx-bom cyclonedx-py poetry "$REPO_ROOT/testdata/fixture-python" -o "$WORK/py.bom.json"
 "$SQ" "${SQ_IDENTITY[@]}" --license "$SQ_LICENSE" --sbom "$WORK/py.bom.json" -o "$WORK/py.cdx.json"
 
-# Assert quality-patch did NOT fabricate a component hash for multi-wheel pypi deps:
-# the per-platform SHA-256s must stay on externalReferences[distribution], never lifted
-# onto the component (see quality_patch.go liftDistributionHashes). Component-agnostic so
-# bumping the fixture's deps doesn't break the gate.
-if jq -e '.components[] | select(.purl // "" | startswith("pkg:pypi/")) | select((.externalReferences[]? | select(.type == "distribution")) and (.hashes | length > 0))' "$WORK/py.cdx.json" >/dev/null; then
-	echo "::error::a multi-wheel pypi component carries a lifted component hash — the arbitrary-wheel fabrication regressed"
+# Assert quality-patch lifted the CANONICAL artifact's hash for multi-wheel pypi deps:
+# at least one pypi component must now carry a component hash, and for every pypi
+# component that took the canonical-fallback path (i.e. had MORE THAN ONE distribution
+# ref — the fast path only fires on a single-artifact ref set) every lifted hash must
+# match a distribution ref whose URL is the universal wheel (…py3-none-any.whl) or sdist
+# (….tar.gz) — never an arbitrary platform wheel. That invariant is component-agnostic
+# for multi-ref pypi deps, so bumping the fixture's deps doesn't break the gate. (see
+# quality_patch.go liftDistributionHashes.)
+if ! jq -e '[.components[] | select(.purl // "" | startswith("pkg:pypi/")) | select(.hashes // [] | length > 0)] | length > 0' "$WORK/py.cdx.json" >/dev/null; then
+	echo "::error::no pypi component carries a lifted component hash — the canonical-artifact lift regressed"
 	exit 1
 fi
-echo "OK: pypi per-wheel SHA-256s left on externalReferences, not fabricated onto components"
+if jq -e '.components[] | select(.purl // "" | startswith("pkg:pypi/")) | select(.hashes // [] | length > 0)
+  | select([.externalReferences[]? | select(.type == "distribution")] | length > 1)
+  | . as $c
+  | [$c.externalReferences[]? | select(.type == "distribution" and ((.url // "" | endswith("py3-none-any.whl")) or (.url // "" | endswith(".tar.gz")))) | .hashes[]?.content] as $canon
+  | select(any($c.hashes[].content; . as $h | ($canon | index($h)) | not))' "$WORK/py.cdx.json" >/dev/null; then
+	echo "::error::a pypi component hash does not match its universal-wheel/sdist ref — an arbitrary platform wheel was lifted"
+	exit 1
+fi
+echo "OK: pypi components carry the universal-wheel/sdist SHA-256, not an arbitrary platform wheel"
 gate python-solo "$FLOOR" "$WORK/py.cdx.json"
 
 # uv path: uv exports CycloneDX 1.5 natively (no cyclonedx-py) from the committed,

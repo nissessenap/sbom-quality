@@ -159,11 +159,13 @@ func normalizeComponentLicenses(c *cdx.Component) {
 // i.e. they describe a single artifact (an npm tarball, possibly SHA-512 + SHA-1 of the
 // same file). A repeated algorithm means the component resolves to many artifacts: a
 // platform-independent lock lists one wheel per platform (poetry spreads dozens of
-// SHA-256s across dozens of refs; `uv export`/requirements packs them into one ref with
-// dozens of SHA-256s) — same reality either way, and no single hash identifies the
-// component. We decline rather than fabricate a checksum that fails verification on
-// every other platform; those hashes stay on the externalReferences, correctly
-// URL-scoped. Recurses into nested components, matching normalizeComponentLicenses.
+// SHA-256s across dozens of refs). No single per-platform hash identifies the component,
+// so the fast path won't fabricate one. But for pypi there IS usually one unambiguous
+// "the package" artifact whose hash verifies on every platform — the universal wheel or
+// the sdist — already carried in our own refs. When the fast path declines, we fall back
+// to lifting only that canonical ref's hashes (see canonicalPyPIDistHashes). A
+// platform-wheels-only release has no such artifact, so we still lift nothing — the
+// honest choice. Recurses into nested components, matching normalizeComponentLicenses.
 func liftDistributionHashes(c *cdx.Component) {
 	if (c.Hashes == nil || len(*c.Hashes) == 0) && c.ExternalReferences != nil {
 		var lifted []cdx.Hash
@@ -177,9 +179,16 @@ func liftDistributionHashes(c *cdx.Component) {
 				lifted = append(lifted, h)
 			}
 		}
-		// len(lifted) == len(seen) ⇒ no algorithm repeated ⇒ one artifact; see doc above.
-		if len(lifted) > 0 && len(lifted) == len(seen) {
+		switch {
+		case len(lifted) > 0 && len(lifted) == len(seen):
+			// no algorithm repeated ⇒ one artifact (npm tarball, maybe SHA-512 + SHA-1).
 			c.Hashes = &lifted
+		case len(lifted) > 0 && strings.HasPrefix(c.PackageURL, "pkg:pypi/"):
+			// pypi-only: many artifacts (per-platform pypi wheels) ⇒ lift the one
+			// canonical platform-independent artifact's hashes, selected by URL, or nothing.
+			if canon := canonicalPyPIDistHashes(c.ExternalReferences); canon != nil {
+				c.Hashes = canon
+			}
 		}
 	}
 	if c.Components != nil {
@@ -187,6 +196,28 @@ func liftDistributionHashes(c *cdx.Component) {
 			liftDistributionHashes(&(*c.Components)[i])
 		}
 	}
+}
+
+// canonicalPyPIDistHashes picks the one platform-independent distribution artifact among
+// many per-platform refs and returns its hashes, or nil. Selection is by URL so it stays
+// generator-agnostic: the universal wheel (…py3-none-any.whl / …py2.py3-none-any.whl)
+// wins, else the sdist (….tar.gz). Both verify on every platform, so lifting one is
+// faithful, not fabricated. A platform-wheels-only release matches neither ⇒ nil.
+func canonicalPyPIDistHashes(refs *[]cdx.ExternalReference) *[]cdx.Hash {
+	var sdist *[]cdx.Hash
+	for _, ref := range *refs {
+		if ref.Type != cdx.ERTypeDistribution || ref.Hashes == nil || len(*ref.Hashes) == 0 {
+			continue
+		}
+		switch {
+		case strings.HasSuffix(ref.URL, "py3-none-any.whl"): // matches py2.py3- too
+			return ref.Hashes
+		// ponytail: .zip sdists (old format) not matched, see #73
+		case sdist == nil && strings.HasSuffix(ref.URL, ".tar.gz"):
+			sdist = ref.Hashes
+		}
+	}
+	return sdist
 }
 
 // normalizeLicenses rewrites each license choice in place: an expression is unwrapped
