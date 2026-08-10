@@ -26,8 +26,20 @@ func generateImage(imageRef string) ([]byte, error) {
 // CycloneDX 1.6 JSON. The app subcommand builds the real build graph (honoring
 // tags/replace); module grain (no -packages) keeps PURLs aligned with trivy's
 // Go entries for a later merge. gomod emits 1.6 natively, so no down-convert.
-func generateGoMod(modPath string) ([]byte, error) {
-	return runTool("cyclonedx-gomod", "app", "-json", "-licenses", "-output-version", "1.6", modPath)
+// mainPath (empty → gomod's default of ".") is the main package's directory
+// relative to modPath — the common ./cmd/<app> layout needs it (#80).
+func generateGoMod(modPath, mainPath string) ([]byte, error) {
+	return runTool("cyclonedx-gomod", gomodArgs(modPath, mainPath)...)
+}
+
+// gomodArgs builds the cyclonedx-gomod argv. Split out from generateGoMod purely
+// so the -main pass-through is unit-testable without the binary on PATH.
+func gomodArgs(modPath, mainPath string) []string {
+	args := []string{"app", "-json", "-licenses", "-output-version", "1.6"}
+	if mainPath != "" {
+		args = append(args, "-main", mainPath)
+	}
+	return append(args, modPath)
 }
 
 // runTool execs an external generator and returns its stdout. A missing binary

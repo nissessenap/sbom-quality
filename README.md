@@ -22,6 +22,14 @@ docker run --rm -v "$PWD":/work ghcr.io/nissessenap/sbom-quality:latest \
   --image alpine:3.20 --go-mod /work --supplier-name "ACME" > sbom.cdx.json
 ```
 
+`--go-mod` assumes `main` sits at the module root. For the usual `./cmd/<app>`
+layout, point `--go-main` at it (relative to `--go-mod`):
+
+```sh
+docker run --rm -v "$PWD":/work ghcr.io/nissessenap/sbom-quality:latest \
+  --go-mod /work --go-main ./cmd/myapp --supplier-name "ACME" > sbom.cdx.json
+```
+
 For Java (or any build env), bring your own CycloneDX dependency SBOM — e.g. one
 produced by `cyclonedx-maven` / `cyclonedx-gradle` in your CI — via `--sbom`
 (mutually exclusive with `--go-mod`, `--image` optional). No Java toolchain is

@@ -15,6 +15,15 @@ func TestRunSourceValidation(t *testing.T) {
 	}
 }
 
+// --go-main only means anything to cyclonedx-gomod, so it is rejected without
+// --go-mod rather than silently ignored (#80).
+func TestRunGoMainRequiresGoMod(t *testing.T) {
+	_, err := Run(Config{SBOM: "y.json", GoMain: "./cmd/app", SupplierName: "X"})
+	if err == nil || !strings.Contains(err.Error(), "--go-main requires --go-mod") {
+		t.Fatalf("want '--go-main requires --go-mod' error, got %v", err)
+	}
+}
+
 // --go-mod and --sbom are mutually exclusive; the guard runs before any tool.
 func TestRunGoModSBOMMutuallyExclusive(t *testing.T) {
 	_, err := Run(Config{GoMod: "./x", SBOM: "y.json", SupplierName: "X"})

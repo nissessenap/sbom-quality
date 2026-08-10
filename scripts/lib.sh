@@ -21,12 +21,15 @@ SQ_IDENTITY=(
 # producer: a gate over a third-party image must not blanket-claim it.
 SQ_LICENSE="Apache-2.0"
 
-# stage_fixture SRC DST — copy the fixture module into DST and make it a git repo.
-# cyclonedx-gomod and ko both read the module version from git, and the checked-in
-# fixture can't carry its own .git.
+# stage_fixture SRC DST [MAIN_SUBDIR] — copy the fixture module into DST and make it
+# a git repo. cyclonedx-gomod and ko both read the module version from git, and the
+# checked-in fixture can't carry its own .git. MAIN_SUBDIR (default ".") puts main.go
+# below the module root, so the gate can cover the --go-main path (#80).
 stage_fixture() {
-	local src="$1" dst="$2"
-	cp "$src"/{go.mod,go.sum,main.go} "$dst/"
+	local src="$1" dst="$2" main="${3:-.}"
+	mkdir -p "$dst/$main"
+	cp "$src"/{go.mod,go.sum} "$dst/"
+	cp "$src/main.go" "$dst/$main/"
 	git -C "$dst" init -q
 	git -C "$dst" add -A
 	git -C "$dst" -c user.email=ci@example.com -c user.name=ci commit -qm fixture

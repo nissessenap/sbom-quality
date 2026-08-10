@@ -5,6 +5,7 @@
 #
 # Gates:
 #   gomod-solo  --go-mod only (pass-through)                       FLOOR
+#   gomod-cmd-main  --go-mod + --go-main ./cmd/app (non-root main) FLOOR
 #   merged      ko-built Go image + --go-mod (real sbomasm merge)  MERGED_FLOOR
 #   dogfood     sbom-quality scans its own image (scripts/dogfood.sh)
 #
@@ -24,7 +25,11 @@ MERGED_FLOOR="${MERGED_FLOOR:-6.4}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$REPO_ROOT/scripts/lib.sh"
 WORK="$(mktemp -d)"
-trap 'rm -rf "$WORK"' EXIT
+# The cmd/-layout fixture gets its own tree, not a subdir of WORK: staging it
+# inside would leave WORK's git repo dirty, and ko/gomod stamp a dirty tree's
+# version differently — silently changing the merged gate's subject.
+CMD_WORK="$(mktemp -d)"
+trap 'rm -rf "$WORK" "$CMD_WORK"' EXIT
 
 stage_fixture "$REPO_ROOT/testdata/fixture-module" "$WORK"
 go build -C "$REPO_ROOT" -o "$WORK/sbom-quality" ./cmd/sbom-quality
@@ -32,6 +37,12 @@ SQ="$WORK/sbom-quality"
 
 "$SQ" "${SQ_IDENTITY[@]}" --license "$SQ_LICENSE" --go-mod "$WORK" -o "$WORK/gomod.cdx.json"
 gate gomod-solo "$FLOOR" "$WORK/gomod.cdx.json"
+
+# Same fixture, main under cmd/app — the common Go layout, unreachable before
+# --go-main existed (#80). Scored too: a cmd/-layout module must be no worse.
+stage_fixture "$REPO_ROOT/testdata/fixture-module" "$CMD_WORK" cmd/app
+"$SQ" "${SQ_IDENTITY[@]}" --license "$SQ_LICENSE" --go-mod "$CMD_WORK" --go-main ./cmd/app -o "$WORK/gomod-cmd.cdx.json"
+gate gomod-cmd-main "$FLOOR" "$WORK/gomod-cmd.cdx.json"
 
 IMG="$(ko_build_fixture "$WORK")"
 echo "ko-built fixture image: $IMG"
