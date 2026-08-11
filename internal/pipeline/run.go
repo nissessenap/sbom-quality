@@ -20,6 +20,9 @@ func Run(cfg Config) ([]byte, error) {
 	if cfg.Image == "" && cfg.GoMod == "" && cfg.SBOM == "" {
 		return nil, errors.New("at least one of --image, --go-mod, or --sbom is required")
 	}
+	if cfg.GoMain != "" && cfg.GoMod == "" {
+		return nil, errors.New("--go-main requires --go-mod")
+	}
 
 	var image, buildSBOM []byte
 	var err error
@@ -36,7 +39,7 @@ func Run(cfg Config) ([]byte, error) {
 	switch {
 	case cfg.GoMod != "":
 		// gomod emits 1.6 natively.
-		if buildSBOM, err = generateGoMod(cfg.GoMod); err != nil {
+		if buildSBOM, err = generateGoMod(cfg.GoMod, cfg.GoMain); err != nil {
 			return nil, err
 		}
 	case cfg.SBOM != "":
