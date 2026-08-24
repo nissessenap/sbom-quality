@@ -99,3 +99,35 @@ pin `--spec-version 1.6` to match the pipeline — and needs Node on the runner.
 cdxgen -t python --spec-version 1.6 -o cdxgen.bom.json .
 sbom-quality --sbom cdxgen.bom.json --supplier-name "ACME" > sbom.cdx.json
 ```
+
+## Managed interpreters inflate `--image` inventories
+
+A uv-based distroless image usually copies a managed interpreter in from the builder
+stage, because a distroless runtime has no system Python:
+
+```dockerfile
+COPY --from=builder /usr/local/uv-python /usr/local/uv-python
+COPY --from=builder /app /app
+```
+
+That interpreter ships its own `pip` and `setuptools`, and `setuptools` vendors its
+dependencies as real `.dist-info` directories under `setuptools/_vendor/`. Trivy's python
+analyzer walks the whole rootfs for `*.dist-info/METADATA`, so all of them are reported.
+A demo app with 11 real dependencies comes back as 25 pypi components — 14 of them
+build-toolchain artefacts the application can never import, and they carry their own CVEs.
+
+This is not a scanner bug: those files genuinely are in the image. Whether a present
+package is *reachable* is a policy/VEX question, so `sbom-quality` never silently drops
+components. Scope the scan yourself instead, with `--trivy-arg` (repeatable, forwarded
+verbatim to trivy):
+
+```sh
+sbom-quality --image repo:tag \
+  --trivy-arg=--skip-dirs --trivy-arg=/usr/local/uv-python \
+  --supplier-name "ACME" > sbom.cdx.json
+```
+
+The same flag reaches any other trivy option, notably `--platform linux/amd64` for
+multi-arch image indexes — without it trivy resolves to whatever platform the runner is
+on. Don't pass `--format` or `--output` through it: the pipeline owns those and overriding
+them breaks the down-convert.

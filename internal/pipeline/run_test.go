@@ -24,6 +24,15 @@ func TestRunGoMainRequiresGoMod(t *testing.T) {
 	}
 }
 
+// --trivy-arg only means anything to trivy, so it is rejected without --image
+// rather than silently ignored (#83).
+func TestRunTrivyArgRequiresImage(t *testing.T) {
+	_, err := Run(Config{SBOM: "y.json", TrivyArgs: []string{"--platform", "linux/amd64"}, SupplierName: "X"})
+	if err == nil || !strings.Contains(err.Error(), "--trivy-arg requires --image") {
+		t.Fatalf("want '--trivy-arg requires --image' error, got %v", err)
+	}
+}
+
 // --go-mod and --sbom are mutually exclusive; the guard runs before any tool.
 func TestRunGoModSBOMMutuallyExclusive(t *testing.T) {
 	_, err := Run(Config{GoMod: "./x", SBOM: "y.json", SupplierName: "X"})

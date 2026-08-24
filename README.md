@@ -30,6 +30,16 @@ docker run --rm -v "$PWD":/work ghcr.io/nissessenap/sbom-quality:latest \
   --go-mod /work --go-main ./cmd/myapp --supplier-name "ACME" > sbom.cdx.json
 ```
 
+`--trivy-arg` forwards a flag verbatim to trivy (repeatable, requires `--image`)
+— use it to scope the scan (`--skip-dirs`) or pin a platform on a multi-arch
+index (`--platform linux/amd64`):
+
+```sh
+docker run --rm ghcr.io/nissessenap/sbom-quality:latest \
+  --image repo:tag --trivy-arg=--platform --trivy-arg=linux/amd64 \
+  --supplier-name "ACME" > sbom.cdx.json
+```
+
 For Java (or any build env), bring your own CycloneDX dependency SBOM — e.g. one
 produced by `cyclonedx-maven` / `cyclonedx-gradle` in your CI — via `--sbom`
 (mutually exclusive with `--go-mod`, `--image` optional). No Java toolchain is

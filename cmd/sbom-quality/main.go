@@ -26,6 +26,7 @@ type cli struct {
 	DataLicense     string   `name:"data-license" help:"SBOM document data license (SPDX id)." default:"CC0-1.0"`
 	NoCIAutodetect  bool     `name:"no-ci-autodetect" help:"Disable GitHub CI-env VCS autodetect (url/commit/ref)."`
 	SkipEnrichment  bool     `name:"skip-enrichment" help:"Skip the parlay enrich stage (supplier/license/VCS for Go/Maven components)."`
+	TrivyArg        []string `name:"trivy-arg" sep:"none" help:"Extra flag forwarded verbatim to trivy (repeatable), e.g. --trivy-arg=--skip-dirs --trivy-arg=/usr/local/uv-python. Requires --image."`
 	Output          string   `name:"output" short:"o" help:"Write SBOM to a file instead of stdout."`
 }
 
@@ -51,6 +52,7 @@ func main() {
 		DataLicense:     c.DataLicense,
 		NoCIAutodetect:  c.NoCIAutodetect,
 		SkipEnrichment:  c.SkipEnrichment,
+		TrivyArgs:       c.TrivyArg,
 	}
 	pipeline.WarnMissingConfig(os.Stderr, cfg)
 
