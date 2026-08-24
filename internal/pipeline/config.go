@@ -50,6 +50,12 @@ type Config struct {
 	Lifecycle       string   // metadata.lifecycles phase (defaults to "build")
 	DataLicense     string   // metadata.licenses — the SBOM document's own data license (defaults to "CC0-1.0")
 
+	// TrivyArgs is forwarded verbatim to the trivy invocation (--trivy-arg,
+	// repeatable). Lets the caller scope the scan (--skip-dirs) or pin a
+	// platform (--platform) without this tool growing an opinion. Rejected
+	// loudly by Run unless Image is set.
+	TrivyArgs []string
+
 	NoCIAutodetect bool // disable GitHub CI-env VCS autodetect
 	SkipEnrichment bool // opt out of the parlay enrich stage
 }

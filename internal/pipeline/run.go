@@ -23,13 +23,16 @@ func Run(cfg Config) ([]byte, error) {
 	if cfg.GoMain != "" && cfg.GoMod == "" {
 		return nil, errors.New("--go-main requires --go-mod")
 	}
+	if len(cfg.TrivyArgs) > 0 && cfg.Image == "" {
+		return nil, errors.New("--trivy-arg requires --image")
+	}
 
 	var image, buildSBOM []byte
 	var err error
 	if cfg.Image != "" {
 		// trivy emits 1.7; down-convert to 1.6 before merge/validate.
 		var raw []byte
-		if raw, err = generateImage(cfg.Image); err != nil {
+		if raw, err = generateImage(cfg.Image, cfg.TrivyArgs); err != nil {
 			return nil, err
 		}
 		if image, err = downConvertTo16(raw); err != nil {

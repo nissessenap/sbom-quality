@@ -18,8 +18,23 @@ var toolTimeout = 5 * time.Minute
 // generateImage runs trivy against a remote image ref and returns its CycloneDX
 // JSON. --format cyclonedx puts trivy in SBOM-generation mode: image-pull only,
 // no vulnerability DB. Modern trivy emits 1.7; the caller down-converts.
-func generateImage(imageRef string) ([]byte, error) {
-	return runTool("trivy", "image", imageRef, "--format", "cyclonedx")
+// extraArgs is the --trivy-arg pass-through (#83).
+func generateImage(imageRef string, extraArgs []string) ([]byte, error) {
+	return runTool("trivy", trivyArgs(imageRef, extraArgs)...)
+}
+
+// trivyArgs builds the trivy argv. Split out from generateImage purely so the
+// --trivy-arg pass-through is unit-testable without the binary on PATH.
+//
+// ponytail: extraArgs is forwarded verbatim — no allow-list, no validation. The
+// caller owns the meaning of what they pass; scoping (--skip-dirs), platform
+// pinning (--platform) and registry auth all fall out for free. Overriding
+// --format/--output here will break the down-convert with a confusing error;
+// documented in docs/python.md rather than guarded. Add a guard if someone
+// actually trips it.
+func trivyArgs(imageRef string, extraArgs []string) []string {
+	args := append([]string{"image", "--format", "cyclonedx"}, extraArgs...)
+	return append(args, imageRef)
 }
 
 // generateGoMod runs cyclonedx-gomod against a Go module and returns its

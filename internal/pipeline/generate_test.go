@@ -33,3 +33,19 @@ func TestRunToolTimeout(t *testing.T) {
 		t.Fatalf("want 'sleep timed out after' error, got %v", err)
 	}
 }
+
+// --trivy-arg values land between trivy's own flags and the positional image ref,
+// verbatim and in order — the caller owns their meaning (#83).
+func TestTrivyArgs(t *testing.T) {
+	base := []string{"image", "--format", "cyclonedx"}
+
+	if got, want := trivyArgs("repo:tag", nil), append(slices.Clone(base), "repo:tag"); !slices.Equal(got, want) {
+		t.Errorf("no extra args: got %v, want %v", got, want)
+	}
+
+	extra := []string{"--skip-dirs", "/usr/local/uv-python", "--platform", "linux/amd64"}
+	want := append(append(slices.Clone(base), extra...), "repo:tag")
+	if got := trivyArgs("repo:tag", extra); !slices.Equal(got, want) {
+		t.Errorf("with extra args: got %v, want %v", got, want)
+	}
+}
