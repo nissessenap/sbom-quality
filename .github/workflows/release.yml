@@ -46,6 +46,12 @@ jobs:
             type=semver,pattern={{version}}
             type=raw,value=latest
 
+      # Multi-platform needs the docker-container driver — the default `docker`
+      # driver refuses it outright. The buildkit image ships its own qemu and
+      # registers binfmt on startup, so no setup-qemu-action for the emulated
+      # runtime stage.
+      - uses: docker/setup-buildx-action@v3
+
       - uses: docker/build-push-action@v7
         id: build
         with:
@@ -68,19 +74,23 @@ jobs:
       #    (trivy pulls the same digest anonymously — the package is public) —
       #    the bundled tools produce a validated 1.6 SBOM on stdout, logs go to
       #    stderr. The runner is amd64, so trivy resolves the index to the amd64
-      #    manifest: the SBOM describes that variant. Both variants are the same
-      #    Dockerfile and the same pinned tool versions, so the component
-      #    inventory is identical bar the arch.
+      #    manifest and the apk purls carry ?arch=x86_64. Bind the attestation to
+      #    that child digest rather than the index, so an arm64 consumer is never
+      #    handed an SBOM asserting the wrong architecture.
       - name: Generate SBOM for the release image
+        id: sbom
         run: |
           ref="${{ steps.img.outputs.name }}@${{ steps.build.outputs.digest }}"
+          amd64="$(docker buildx imagetools inspect "$ref" --raw | jq -er \
+            '.manifests[] | select(.platform.os == "linux" and .platform.architecture == "amd64") | .digest')"
+          echo "digest=$amd64" >> "$GITHUB_OUTPUT"
           docker run --rm "$ref" --image "$ref" --supplier-name "sbom-quality" \
             > sbom.cdx.json
 
       - uses: actions/attest-sbom@v4
         with:
           subject-name: ${{ steps.img.outputs.name }}
-          subject-digest: ${{ steps.build.outputs.digest }}
+          subject-digest: ${{ steps.sbom.outputs.digest }}
           sbom-path: sbom.cdx.json
           push-to-registry: true
 
@@ -92,5 +102,6 @@ jobs:
           ref="oci://${{ steps.img.outputs.name }}@${{ steps.build.outputs.digest }}"
           # default predicate-type is SLSA provenance
           gh attestation verify "$ref" --repo "$GITHUB_REPOSITORY"
-          gh attestation verify "$ref" --repo "$GITHUB_REPOSITORY" \
-            --predicate-type https://cyclonedx.org/bom
+          gh attestation verify \
+            "oci://${{ steps.img.outputs.name }}@${{ steps.sbom.outputs.digest }}" \
+            --repo "$GITHUB_REPOSITORY" --predicate-type https://cyclonedx.org/bom
