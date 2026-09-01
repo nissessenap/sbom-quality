@@ -12,19 +12,26 @@ ARG SBOM_UTILITY_VERSION=v0.19.2
 
 FROM aquasec/trivy:${TRIVY_VERSION} AS trivy
 
-FROM golang:${GO_VERSION}-alpine AS builder
+# --platform=$BUILDPLATFORM: build natively and cross-compile to $TARGETARCH.
+# Running this stage under qemu for the arm64 target instead takes >10x longer.
+FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-alpine AS builder
 ARG CYCLONEDX_GOMOD_VERSION
 ARG SBOMASM_VERSION
 ARG PARLAY_VERSION
 ARG SBOM_UTILITY_VERSION
-# TARGETARCH is set by buildx; GOARCH=$TARGETARCH keeps arm64 a build-arg away.
+# TARGETARCH is set by buildx; GOARCH=$TARGETARCH cross-compiles the tools.
 ARG TARGETARCH
 ENV CGO_ENABLED=0 GOARCH=${TARGETARCH}
 
+# A cross-compiling `go install` lands in /go/bin/linux_$GOARCH, a native one in
+# /go/bin — and GOBIN can't be used to force it ("cannot install cross-compiled
+# binaries when GOBIN is set"). Flatten instead, so the COPYs below have one path
+# for both cases.
 RUN go install "github.com/CycloneDX/cyclonedx-gomod/cmd/cyclonedx-gomod@${CYCLONEDX_GOMOD_VERSION}" \
  && go install "github.com/interlynk-io/sbomasm/v2@${SBOMASM_VERSION}" \
  && go install "github.com/snyk/parlay@${PARLAY_VERSION}" \
- && go install "github.com/CycloneDX/sbom-utility@${SBOM_UTILITY_VERSION}"
+ && go install "github.com/CycloneDX/sbom-utility@${SBOM_UTILITY_VERSION}" \
+ && if [ -d "/go/bin/linux_${TARGETARCH}" ]; then mv "/go/bin/linux_${TARGETARCH}"/* /go/bin/; fi
 
 WORKDIR /src
 COPY go.mod go.sum ./
