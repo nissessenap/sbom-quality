@@ -1,8 +1,8 @@
 name: release
 
 # On a vX.Y.Z tag, build the container and push it to GHCR as both the version
-# tag and `latest`. linux/amd64 only for the MVP; the Dockerfile's GOARCH=$TARGETARCH
-# makes arm64 a one-line `platforms:` change away.
+# tag and `latest`, for linux/amd64 + linux/arm64 — consumers run this image on
+# arm64 CI runners, where an amd64-only manifest is an `exec format error`.
 #
 # Then sign what we ship (keyless GitHub OIDC, Sigstore/Fulcio):
 #   1. build-provenance attestation — proves *how* the image was built.
@@ -50,12 +50,14 @@ jobs:
         id: build
         with:
           context: .
-          platforms: linux/amd64
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
-      # 1. Provenance: how the image was built.
+      # 1. Provenance: how the image was built. For a multi-platform build the
+      #    digest is the manifest index's, so both attestations below bind to the
+      #    index — which is what consumers pull by tag.
       - uses: actions/attest-build-provenance@v4
         with:
           subject-name: ${{ steps.img.outputs.name }}
@@ -65,7 +67,10 @@ jobs:
       # 2. SBOM: what's in the image. Run the just-shipped image against itself
       #    (trivy pulls the same digest anonymously — the package is public) —
       #    the bundled tools produce a validated 1.6 SBOM on stdout, logs go to
-      #    stderr.
+      #    stderr. The runner is amd64, so trivy resolves the index to the amd64
+      #    manifest: the SBOM describes that variant. Both variants are the same
+      #    Dockerfile and the same pinned tool versions, so the component
+      #    inventory is identical bar the arch.
       - name: Generate SBOM for the release image
         run: |
           ref="${{ steps.img.outputs.name }}@${{ steps.build.outputs.digest }}"

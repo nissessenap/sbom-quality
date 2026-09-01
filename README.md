@@ -12,9 +12,10 @@ It will intially support cyclondx but SPDX is also on the todo.
 
 ## Container
 
-The primary artifact is a linux/amd64 image on GHCR bundling the runtime tools
-(trivy, cyclonedx-gomod, sbomasm, parlay, sbom-utility). Published on each
-`vX.Y.Z` tag as both the version tag and `latest`.
+The primary artifact is a multi-arch (linux/amd64, linux/arm64) image on GHCR
+bundling the runtime tools (trivy, cyclonedx-gomod, sbomasm, parlay,
+sbom-utility). Published on each `vX.Y.Z` tag as both the version tag and
+`latest`.
 
 ```sh
 # image + Go module → one merged 1.6 SBOM on stdout
