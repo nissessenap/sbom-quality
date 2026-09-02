@@ -50,7 +50,7 @@ jobs:
       # driver refuses it outright. The buildkit image ships its own qemu and
       # registers binfmt on startup, so no setup-qemu-action for the emulated
       # runtime stage.
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
 
       - uses: docker/build-push-action@v7
         id: build
@@ -87,7 +87,7 @@ jobs:
           docker run --rm "$ref" --image "$ref" --supplier-name "sbom-quality" \
             > sbom.cdx.json
 
-      - uses: actions/attest-sbom@v4
+      - uses: actions/attest@v4
         with:
           subject-name: ${{ steps.img.outputs.name }}
           subject-digest: ${{ steps.sbom.outputs.digest }}
