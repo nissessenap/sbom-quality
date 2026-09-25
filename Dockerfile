@@ -2,7 +2,7 @@
 # out to `go build` at runtime — the toolchain must be present, not just the CLI.
 # Bundles the 5 runtime tools (sbomqs stays CI-only). Versions are manual ARG
 # pins; keep them in sync with .github/workflows/sbomqs-gate.yml.
-ARG GO_VERSION=1.26
+ARG GO_VERSION=1.27
 ARG TRIVY_VERSION=0.72.0
 
 ARG CYCLONEDX_GOMOD_VERSION=v1.10.0
