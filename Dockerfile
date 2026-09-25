@@ -58,7 +58,10 @@ COPY --from=trivy /usr/local/bin/trivy /usr/local/bin/trivy
 
 # Run non-root. cyclonedx-gomod shells out to `go build` at runtime, so point the
 # go caches at the nonroot HOME (go creates them on first use); /go stays read-only.
+# GOTOOLCHAIN=auto overrides the golang image's `local`: a module whose go.mod
+# asks for a newer Go than bundled gets that toolchain downloaded, not a failed scan.
 ENV HOME=/home/nonroot \
+    GOTOOLCHAIN=auto \
     GOCACHE=/home/nonroot/.cache/go-build \
     GOMODCACHE=/home/nonroot/go/pkg/mod
 USER nonroot
