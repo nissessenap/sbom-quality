@@ -2,7 +2,7 @@
 # out to `go build` at runtime — the toolchain must be present, not just the CLI.
 # Bundles the 5 runtime tools (sbomqs stays CI-only). Versions are manual ARG
 # pins; keep them in sync with .github/workflows/sbomqs-gate.yml.
-ARG GO_VERSION=1.26
+ARG GO_VERSION=1.27
 ARG TRIVY_VERSION=0.72.0
 
 ARG CYCLONEDX_GOMOD_VERSION=v1.10.0
@@ -58,7 +58,10 @@ COPY --from=trivy /usr/local/bin/trivy /usr/local/bin/trivy
 
 # Run non-root. cyclonedx-gomod shells out to `go build` at runtime, so point the
 # go caches at the nonroot HOME (go creates them on first use); /go stays read-only.
+# GOTOOLCHAIN=auto overrides the golang image's `local`: a module whose go.mod
+# asks for a newer Go than bundled gets that toolchain downloaded, not a failed scan.
 ENV HOME=/home/nonroot \
+    GOTOOLCHAIN=auto \
     GOCACHE=/home/nonroot/.cache/go-build \
     GOMODCACHE=/home/nonroot/go/pkg/mod
 USER nonroot
